@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PoliCalc — Actualización Contractual</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Login screen -->
+<div id="login-screen" class="login-overlay">
+  <div class="login-card">
+    <div class="login-logo">Poli<span>Calc</span></div>
+    <div class="login-sub">Actualización Contractual</div>
+    <div id="login-content"></div>
+  </div>
+</div>
+
+<!-- App shell -->
+<div class="shell" id="app-shell" style="display:none">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">Poli<span>Calc</span></div>
+      <div class="brand-sub" id="org-name-display">Cargando...</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active" onclick="goPage('matriz')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="2" y1="10" x2="14" y2="10"/><line x1="6" y1="2" x2="6" y2="14"/><line x1="10" y1="2" x2="10" y2="14"/></svg>
+        Matriz mensual
+      </div>
+      <div class="nav-item" onclick="goPage('hist')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,12 5,8 8,10 11,5 14,7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
+        Historial
+      </div>
+      <div class="nav-item" onclick="goPage('form')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="11"/><line x1="5" y1="8" x2="11" y2="8"/></svg>
+        Fórmulas
+      </div>
+      <div class="nav-item" onclick="goPage('indices')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="3" cy="8" r="2"/><circle cx="13" cy="8" r="2"/></svg>
+        Índices
+      </div>
+      <div class="nav-item" onclick="goPage('alertas')" id="nav-alertas">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8,2 L8,2 C9.5,2 10.5,3 10.5,4.5 L10.5,7 C10.5,8.5 11.5,9 12,10 L4,10 C4.5,9 5.5,8.5 5.5,7 L5.5,4.5 C5.5,3 6.5,2 8,2 Z"/><path d="M6.5,10 C6.5,11 7,12 8,12 C9,12 9.5,11 9.5,10"/></svg>
+        Alertas
+        <span id="alertas-badge" class="badge-count" style="display:none">0</span>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="status-row">
+        <span id="user-info-display">Cargando...</span>
+        <span id="footer-clock"></span>
+      </div>
+      <button class="lock-btn" onclick="logout()">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4,6 L10,6 M7,3 L10,6 L7,9"/><path d="M6,2 L3,2 C2.5,2 2,2.5 2,3 L2,9 C2,9.5 2.5,10 3,10 L6,10"/></svg>
+        Salir
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- Las páginas se cargan dinámicamente -->
+    <div id="page-content"></div>
+  </main>
+</div>
+
+<div id="toast-container"></div>
+<script src="app.js"></script>
+</body>
+</html>
