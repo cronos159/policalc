@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════
-// POLICALC v2 — Frontend completo
+// POLICALC v2 — Frontend completo con GitHub OAuth
 // ════════════════════════════════════════════════════════════════
 
 // ⚠️ REEMPLAZÁ ESTOS VALORES con los tuyos de Supabase (Project Settings → API)
@@ -23,7 +23,21 @@ let chartMonto = null
 
 // ════ INIT ════
 window.onload = async () => {
-  // Verificar sesión
+  // Manejar callback de OAuth
+  const hashParams = new URLSearchParams(window.location.hash.substring(1))
+  if (hashParams.get('access_token')) {
+    // Venimos del callback de GitHub
+    const { data, error } = await sb.auth.getSession()
+    if (data.session) {
+      await loadUserData()
+      showApp()
+      // Limpiar hash de la URL
+      window.history.replaceState(null, '', window.location.pathname)
+      return
+    }
+  }
+  
+  // Verificar sesión existente
   const { data: { session } } = await sb.auth.getSession()
   if (!session) {
     showLogin()
@@ -44,9 +58,21 @@ function showLogin() {
   document.getElementById('app-shell').style.display = 'none'
   
   document.getElementById('login-content').innerHTML = `
-    <input type="email" id="email-input" placeholder="Email" autofocus/>
+    <button class="btn btn-accent" style="width:100%;margin-bottom:16px;padding:12px" onclick="loginWithGitHub()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+      Continuar con GitHub
+    </button>
+    
+    <div style="position:relative;margin:20px 0">
+      <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:var(--border)"></div>
+      <div style="position:relative;text-align:center;background:var(--surface);display:inline-block;padding:0 12px;color:var(--text3);font-size:11px;left:50%;transform:translateX(-50%)">O con email</div>
+    </div>
+    
+    <input type="email" id="email-input" placeholder="Email"/>
     <input type="password" id="pw-input" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()"/>
-    <button class="btn btn-accent" style="width:100%;margin-top:6px" onclick="doLogin()">Ingresar</button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="doLogin()">Ingresar con email</button>
     <div class="login-msg" id="login-msg"></div>
     <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="showSignup()">Crear cuenta nueva</button>
   `
@@ -62,6 +88,20 @@ function showSignup() {
     <div class="login-msg" id="login-msg"></div>
     <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="showLogin()">Ya tengo cuenta</button>
   `
+}
+
+async function loginWithGitHub() {
+  const { data, error } = await sb.auth.signInWithOAuth({
+    provider: 'github',
+    options: {
+      redirectTo: window.location.origin
+    }
+  })
+  
+  if (error) {
+    toast('Error al conectar con GitHub: ' + error.message, 'error')
+  }
+  // El navegador redirige automáticamente a GitHub
 }
 
 async function doLogin() {
@@ -231,11 +271,21 @@ async function renderMatriz() {
     </div>
     <div class="card">
       <div class="card-title">Estado actual</div>
-      <p>✅ Login real funcionando</p>
-      <p>✅ Multi-empresa configurado</p>
-      <p>✅ Base de datos conectada</p>
-      <p>⏳ Matriz mensual en desarrollo</p>
-      <p>⏳ Scraper YPF en siguiente fase</p>
+      <p style="margin-bottom:8px">✅ Login con GitHub funcionando</p>
+      <p style="margin-bottom:8px">✅ Multi-empresa configurado</p>
+      <p style="margin-bottom:8px">✅ Base de datos conectada</p>
+      <p style="margin-bottom:8px">✅ Usuario: ${currentUser.email}</p>
+      <p style="margin-bottom:8px">✅ Organización: ${currentOrg.nombre}</p>
+      <p style="margin-bottom:8px">⏳ Matriz mensual en desarrollo</p>
+      <p style="margin-bottom:8px">⏳ Scraper YPF en siguiente fase</p>
+    </div>
+    
+    <div class="card">
+      <div class="card-title">Próximos pasos</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.6">
+        La matriz completa con cálculo mes a mes, override manual de valores, y exportación CSV se completa en la siguiente iteración.
+        Por ahora podés probar el sistema de <strong>Fórmulas</strong>, <strong>Índices</strong> y <strong>Alertas</strong> que ya están funcionando con la base de datos.
+      </p>
     </div>
   `
 }
