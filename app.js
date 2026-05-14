@@ -4,7 +4,7 @@
 
 // ⚠️ REEMPLAZÁ ESTOS VALORES con los tuyos de Supabase (Project Settings → API)
 const SUPABASE_URL = 'https://uhdglwjpghdfjjmzwtub.supabase.co'
-const SUPABASE_KEY = 'sb_publishable_...'
+const SUPABASE_KEY = 'sb_publishable_WgbN4yhsgSQwReeRiPgFbw_gGb205J7'
 
 const { createClient } = supabase
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
