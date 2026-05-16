@@ -3,8 +3,8 @@
 // ════════════════════════════════════════════════════════════════
 
 // ⚠️ REEMPLAZÁ ESTOS VALORES con los tuyos de Supabase
-const SUPABASE_URL = 'https://XXXXXXXX.supabase.co'
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3M...'
+const SUPABASE_URL = 'https://uhdglwjpghdfjjmzwtub.supabase.co'
+const SUPABASE_KEY = 'sb_publishable_WgbN4yhsgSQwReeRiPgFbw_gGb205J7'
 
 const { createClient } = supabase
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -185,7 +185,6 @@ async function loadUserData() {
   document.getElementById('org-name-display').textContent = currentOrg.nombre
   document.getElementById('user-info-display').textContent = `${userData.nombre || userData.email} (${userData.rol})`
   
-  // Cargar datos
   await Promise.all([
     loadFormulas(),
     loadContratos(),
@@ -258,7 +257,7 @@ function goPage(page) {
   else if (page === 'alertas') renderAlertas()
 }
 
-// ════ PÁGINA MATRIZ (NUEVA) ════
+// ════ PÁGINA MATRIZ ════
 function renderMatriz() {
   let html = `
     <div class="page-head">
@@ -333,7 +332,6 @@ function renderMatriz() {
   
   document.getElementById('page-content').innerHTML = html
   
-  // Inicializar selects de meses
   ;['mes-desde', 'mes-hasta'].forEach(id => {
     const s = document.getElementById(id)
     s.innerHTML = MESES_LARGO.map((m, i) => `<option value="${i}">${m}</option>`).join('')
@@ -371,7 +369,6 @@ function calcularMatriz() {
   const mesHasta = parseInt(document.getElementById('mes-hasta').value)
   const anioHasta = parseInt(document.getElementById('anio-hasta').value)
   
-  // Generar períodos
   const periodos = []
   let y = anioDesde, m = mesDesde
   for (let i = 0; i < 200; i++) {
@@ -381,14 +378,12 @@ function calcularMatriz() {
     if (m > 11) { m = 0; y++ }
   }
   
-  // Construir matriz
   renderMatrizTabla(formula, periodos, monto)
 }
 
 function renderMatrizTabla(formula, periodos, montoBase) {
   const componentes = JSON.parse(formula.componentes)
   
-  // Calcular valores
   const valoresPorIndice = {}
   const pkPrev = getPeriodoPrevio(periodos[0])
   
@@ -396,7 +391,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     valoresPorIndice[comp.codigo] = periodos.map(p => getValue(comp.codigo, p.key))
   })
   
-  // Calcular totales mensuales
   const totalesMensuales = periodos.map((p, i) => {
     let total = 0, valid = true
     componentes.forEach(comp => {
@@ -408,7 +402,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     return { val: total, valid }
   })
   
-  // Calcular montos
   let monto = montoBase
   const montos = [monto]
   totalesMensuales.forEach(t => {
@@ -416,7 +409,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     montos.push(monto)
   })
   
-  // Renderizar tabla
   let html = `
     <div class="card" style="margin-top:16px">
       <div class="card-title">Matriz mensual — ${formula.nombre}</div>
@@ -432,11 +424,9 @@ function renderMatrizTabla(formula, periodos, montoBase) {
           <tbody>
   `
   
-  // Filas por componente
   componentes.forEach(comp => {
     const meta = INDICES_META[comp.codigo] || { label: comp.codigo, color: 'tag-blue' }
     
-    // Fila variación
     html += `<tr class="row-idx"><td class="idx-col">
       <span class="tag ${meta.color}">${comp.codigo}</span>
       <span style="color:var(--text3);font-size:10px;margin-left:6px">${comp.coef}%</span>
@@ -455,7 +445,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     })
     html += `<td class="col-total">${sumVar.toFixed(2)}%</td></tr>`
     
-    // Fila afección
     html += `<tr class="row-afec"><td class="idx-col" style="padding-left:24px;font-size:11px">↳ Afección</td>`
     let sumAfec = 0
     periodos.forEach((p, i) => {
@@ -469,7 +458,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     html += `<td class="col-total">${sumAfec.toFixed(2)}%</td></tr>`
   })
   
-  // Total ajuste
   html += `<tr class="row-total"><td class="idx-col">Total ajuste mensual</td>`
   let acumPct = 0
   totalesMensuales.forEach(t => {
@@ -478,7 +466,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
   })
   html += `<td class="col-total">${acumPct.toFixed(2)}%</td></tr>`
   
-  // Monto
   html += `<tr class="row-monto"><td class="idx-col">Monto contrato ($)</td>`
   totalesMensuales.forEach((t, i) => {
     html += `<td>${montos[i + 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>`
@@ -489,7 +476,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
   
   document.getElementById('matriz-resultado').innerHTML = html
   
-  // Guardar para exportar
   window._matrizActual = { formula, periodos, montoBase, totalesMensuales, montos, componentes, valoresPorIndice }
 }
 
@@ -517,7 +503,6 @@ function exportMatrizCSV() {
   lines.push(['Componente', 'Coef', ...periodos.map(p => p.label), 'Total'].join(';'))
   
   componentes.forEach(comp => {
-    // Variación
     const fila = [comp.codigo + ' Var%', comp.coef + '%']
     let sumVar = 0
     periodos.forEach((p, i) => {
@@ -530,7 +515,6 @@ function exportMatrizCSV() {
     fila.push(sumVar.toFixed(2).replace('.', ','))
     lines.push(fila.join(';'))
     
-    // Afección
     const filaA = [comp.codigo + ' Afección', '']
     let sumA = 0
     periodos.forEach((p, i) => {
@@ -545,7 +529,6 @@ function exportMatrizCSV() {
     lines.push(filaA.join(';'))
   })
   
-  // Total
   const filaT = ['TOTAL AJUSTE', '']
   let acum = 0
   totalesMensuales.forEach(t => {
@@ -555,7 +538,6 @@ function exportMatrizCSV() {
   filaT.push(acum.toFixed(2).replace('.', ','))
   lines.push(filaT.join(';'))
   
-  // Monto
   const filaM = ['Monto ($)', montos[0].toString().replace('.', ',')]
   totalesMensuales.forEach((t, i) => {
     filaM.push(montos[i + 1].toFixed(2).replace('.', ','))
@@ -606,7 +588,7 @@ async function guardarCalculo() {
   }
 }
 
-// ════ RESTO DE PÁGINAS (simplificadas) ════
+// ════ HISTORIAL ════
 async function renderHistorial() {
   const { data } = await sb.from('calculos_mensuales').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false })
   
@@ -625,6 +607,7 @@ async function renderHistorial() {
   document.getElementById('page-content').innerHTML = html
 }
 
+// ════ FÓRMULAS ════
 async function renderFormulas() {
   let html = `<div class="page-head"><div><div class="page-title">Fórmulas</div><div class="page-sub">Polinómicas de tu organización</div></div><button class="btn btn-accent" onclick="toast('Función en desarrollo','warn')">Nueva fórmula</button></div><div class="card">`
   
@@ -641,6 +624,7 @@ async function renderFormulas() {
   document.getElementById('page-content').innerHTML = html
 }
 
+// ════ ÍNDICES ════
 async function renderIndices() {
   const { data: catalogo } = await sb.from('indices_catalogo').select('*')
   
@@ -676,6 +660,7 @@ async function sincronizarIndices() {
   toast('Sincronización completa ✓', 'success')
 }
 
+// ════ ALERTAS ════
 async function renderAlertas() {
   const { data } = await sb.from('alertas').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).limit(50)
   
@@ -709,51 +694,4 @@ function toast(msg, type = 'success') {
   c.innerHTML = `<span style="color:${color};font-size:14px">${icon}</span> ${msg}`
   document.body.appendChild(c)
   setTimeout(() => { c.style.animation = 'toastIn .2s reverse'; setTimeout(() => c.remove(), 200) }, 2400)
-}-- ════════════════════════════════════════════════════════════
--- POLICALC FASE 4 — SQL CORREGIDO
--- Pegá esto en SQL Editor de Supabase y ejecutá con Run
--- ════════════════════════════════════════════════════════════
-
--- Tabla de contratos
-CREATE TABLE IF NOT EXISTS contratos (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id UUID REFERENCES organizaciones(id) ON DELETE CASCADE,
-  formula_id UUID REFERENCES formulas(id),
-  nombre TEXT NOT NULL,
-  empresa TEXT,
-  mes_inicio TEXT NOT NULL,
-  mes_fin TEXT NOT NULL,
-  monto_base NUMERIC NOT NULL,
-  notas TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Tabla de ediciones manuales de celdas
-CREATE TABLE IF NOT EXISTS matriz_overrides (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  contrato_id UUID REFERENCES contratos(id) ON DELETE CASCADE,
-  org_id UUID REFERENCES organizaciones(id) ON DELETE CASCADE,
-  clave TEXT NOT NULL,
-  valor NUMERIC NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(contrato_id, clave)
-);
-
--- Row Level Security
-ALTER TABLE contratos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE matriz_overrides ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "org_contratos" ON contratos
-  USING (org_id IN (
-    SELECT org_id FROM usuarios WHERE id = auth.uid()
-  ));
-
-CREATE POLICY "org_overrides" ON matriz_overrides
-  USING (org_id IN (
-    SELECT org_id FROM usuarios WHERE id = auth.uid()
-  ));
-
--- Índices para búsqueda rápida
-CREATE INDEX IF NOT EXISTS idx_overrides_contrato ON matriz_overrides(contrato_id);
-CREATE INDEX IF NOT EXISTS idx_contratos_org ON contratos(org_id);
+}
