@@ -615,7 +615,7 @@ async function renderFormulas() {
     html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin fórmulas — creá la primera</div>`
   } else {
     formulas.forEach(f => {
-      const comps = JSON.parse(f.componentes)
+      const comps = typeof f.componentes === 'string' ? JSON.parse(f.componentes) : f.componentes
       html += `<div class="hist-card"><div class="hist-head"><div style="flex:1"><div style="font-size:14px;font-weight:500;margin-bottom:6px">${f.nombre}</div>${f.empresa ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${f.empresa}</div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:5px">${comps.map(c => `<span class="tag ${INDICES_META[c.codigo]?.color || 'tag-blue'}">${c.codigo} ${c.coef}%</span>`).join('')}</div></div></div></div>`
     })
   }
