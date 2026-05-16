@@ -2,14 +2,12 @@
 // POLICALC v2 — Frontend completo con matriz mensual
 // ════════════════════════════════════════════════════════════════
 
-// ⚠️ REEMPLAZÁ ESTOS VALORES con los tuyos de Supabase
 const SUPABASE_URL = 'https://uhdglwjpghdfjjmzwtub.supabase.co'
 const SUPABASE_KEY = 'sb_publishable_WgbN4yhsgSQwReeRiPgFbw_gGb205J7'
 
 const { createClient } = supabase
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// ════ CONSTANTES ════
 const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
 
@@ -21,52 +19,32 @@ const INDICES_META = {
   'GR3':  {label:'GR3 Gasoil YPF', color:'tag-purple'},
 }
 
-// ════ ESTADO GLOBAL ════
 let currentUser = null
 let currentOrg = null
 let formulas = []
 let contratos = []
 let contratoActual = null
 let indicesValores = {}
-let collapsedRows = {}
-let chartMonto = null
 
-// ════ INIT ════
 window.onload = async () => {
   const hashParams = new URLSearchParams(window.location.hash.substring(1))
   if (hashParams.get('access_token')) {
     const { data } = await sb.auth.getSession()
-    if (data.session) {
-      await loadUserData()
-      showApp()
-      window.history.replaceState(null, '', window.location.pathname)
-      return
-    }
+    if (data.session) { await loadUserData(); showApp(); window.history.replaceState(null, '', window.location.pathname); return }
   }
-  
   const { data: { session } } = await sb.auth.getSession()
-  if (!session) {
-    showLogin()
-  } else {
-    await loadUserData()
-    showApp()
-  }
-  
+  if (!session) { showLogin() } else { await loadUserData(); showApp() }
   setInterval(checkAlertas, 30000)
   setInterval(updateClock, 1000)
   updateClock()
 }
 
-// ════ AUTH ════
 function showLogin() {
   document.getElementById('login-screen').style.display = 'flex'
   document.getElementById('app-shell').style.display = 'none'
-  
   document.getElementById('login-content').innerHTML = `
     <button class="btn btn-accent" style="width:100%;margin-bottom:16px;padding:12px" onclick="loginWithGitHub()">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-      </svg>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
       Continuar con GitHub
     </button>
     <div style="position:relative;margin:20px 0">
@@ -94,10 +72,7 @@ function showSignup() {
 }
 
 async function loginWithGitHub() {
-  const { error } = await sb.auth.signInWithOAuth({
-    provider: 'github',
-    options: { redirectTo: window.location.origin }
-  })
+  const { error } = await sb.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: window.location.origin } })
   if (error) toast('Error: ' + error.message, 'error')
 }
 
@@ -105,22 +80,10 @@ async function doLogin() {
   const email = document.getElementById('email-input').value
   const pw = document.getElementById('pw-input').value
   const msg = document.getElementById('login-msg')
-  
-  if (!email || !pw) {
-    msg.textContent = 'Completá todos los campos'
-    msg.className = 'login-msg err'
-    return
-  }
-  
+  if (!email || !pw) { msg.textContent = 'Completá todos los campos'; msg.className = 'login-msg err'; return }
   const { error } = await sb.auth.signInWithPassword({ email, password: pw })
-  
-  if (error) {
-    msg.textContent = error.message === 'Invalid login credentials' ? 'Email o contraseña incorrectos' : error.message
-    msg.className = 'login-msg err'
-  } else {
-    await loadUserData()
-    showApp()
-  }
+  if (error) { msg.textContent = error.message === 'Invalid login credentials' ? 'Email o contraseña incorrectos' : error.message; msg.className = 'login-msg err' }
+  else { await loadUserData(); showApp() }
 }
 
 async function doSignup() {
@@ -129,68 +92,26 @@ async function doSignup() {
   const pw = document.getElementById('pw-input').value
   const pw2 = document.getElementById('pw2-input').value
   const msg = document.getElementById('login-msg')
-  
-  if (!nombre || !email || !pw) {
-    msg.textContent = 'Completá todos los campos'
-    msg.className = 'login-msg err'
-    return
-  }
-  
-  if (pw.length < 6) {
-    msg.textContent = 'La contraseña debe tener mínimo 6 caracteres'
-    msg.className = 'login-msg err'
-    return
-  }
-  
-  if (pw !== pw2) {
-    msg.textContent = 'Las contraseñas no coinciden'
-    msg.className = 'login-msg err'
-    return
-  }
-  
-  const { error } = await sb.auth.signUp({
-    email, password: pw,
-    options: { data: { nombre } }
-  })
-  
-  if (error) {
-    msg.textContent = error.message
-    msg.className = 'login-msg err'
-  } else {
-    msg.textContent = 'Cuenta creada — verificá tu email'
-    msg.className = 'login-msg'
-  }
+  if (!nombre || !email || !pw) { msg.textContent = 'Completá todos los campos'; msg.className = 'login-msg err'; return }
+  if (pw.length < 6) { msg.textContent = 'La contraseña debe tener mínimo 6 caracteres'; msg.className = 'login-msg err'; return }
+  if (pw !== pw2) { msg.textContent = 'Las contraseñas no coinciden'; msg.className = 'login-msg err'; return }
+  const { error } = await sb.auth.signUp({ email, password: pw, options: { data: { nombre } } })
+  if (error) { msg.textContent = error.message; msg.className = 'login-msg err' }
+  else { msg.textContent = 'Cuenta creada — verificá tu email'; msg.className = 'login-msg' }
 }
 
-async function logout() {
-  await sb.auth.signOut()
-  location.reload()
-}
+async function logout() { await sb.auth.signOut(); location.reload() }
 
 async function loadUserData() {
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return
-  
   const { data: userData } = await sb.from('usuarios').select('*, org:organizaciones(*)').eq('id', user.id).single()
-  
-  if (!userData || !userData.org) {
-    toast('Usuario sin organización asignada', 'error')
-    await sb.auth.signOut()
-    return
-  }
-  
+  if (!userData || !userData.org) { toast('Usuario sin organización asignada', 'error'); await sb.auth.signOut(); return }
   currentUser = userData
   currentOrg = userData.org
-  
   document.getElementById('org-name-display').textContent = currentOrg.nombre
   document.getElementById('user-info-display').textContent = `${userData.nombre || userData.email} (${userData.rol})`
-  
-  await Promise.all([
-    loadFormulas(),
-    loadContratos(),
-    loadIndicesValores()
-  ])
-  
+  await Promise.all([loadFormulas(), loadContratos(), loadIndicesValores()])
   await checkAlertas()
 }
 
@@ -207,29 +128,16 @@ async function loadContratos() {
 async function loadIndicesValores() {
   const { data } = await sb.from('indices_valores').select('*').or(`org_id.is.null,org_id.eq.${currentOrg.id}`)
   indicesValores = {}
-  
   data?.forEach(row => {
     if (!indicesValores[row.codigo]) indicesValores[row.codigo] = {}
-    indicesValores[row.codigo][row.periodo] = {
-      valor: parseFloat(row.valor),
-      source: row.org_id ? 'manual' : 'auto'
-    }
+    indicesValores[row.codigo][row.periodo] = { valor: parseFloat(row.valor), source: row.org_id ? 'manual' : 'auto' }
   })
 }
 
 async function checkAlertas() {
-  const { count } = await sb.from('alertas')
-    .select('*', { count: 'exact', head: true })
-    .eq('org_id', currentOrg.id)
-    .eq('leida', false)
-  
+  const { count } = await sb.from('alertas').select('*', { count: 'exact', head: true }).eq('org_id', currentOrg.id).eq('leida', false)
   const badge = document.getElementById('alertas-badge')
-  if (count > 0) {
-    badge.textContent = count
-    badge.style.display = 'inline-block'
-  } else {
-    badge.style.display = 'none'
-  }
+  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-block' } else { badge.style.display = 'none' }
 }
 
 function showApp() {
@@ -239,17 +147,14 @@ function showApp() {
 }
 
 function updateClock() {
-  const d = new Date()
   const el = document.getElementById('footer-clock')
-  if (el) el.textContent = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  if (el) el.textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
 }
 
-// ════ NAVEGACIÓN ════
 function goPage(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
   const idx = { 'matriz': 0, 'hist': 1, 'form': 2, 'indices': 3, 'alertas': 4 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
-  
   if (page === 'matriz') renderMatriz()
   else if (page === 'hist') renderHistorial()
   else if (page === 'form') renderFormulas()
@@ -257,32 +162,29 @@ function goPage(page) {
   else if (page === 'alertas') renderAlertas()
 }
 
-// ════ PÁGINA MATRIZ ════
+// ════ HELPER CENTRAL — parsea componentes sin importar el formato ════
+function parseComponentes(c) {
+  if (Array.isArray(c)) return c
+  if (typeof c === 'string') { try { return JSON.parse(c) } catch(e) { return [] } }
+  if (c && typeof c === 'object') return Object.values(c)
+  return []
+}
+
 function renderMatriz() {
   let html = `
     <div class="page-head">
-      <div>
-        <div class="page-title">Matriz de actualización</div>
-        <div class="page-sub">Cálculo mensual con fórmula polinómica</div>
-      </div>
+      <div><div class="page-title">Matriz de actualización</div><div class="page-sub">Cálculo mensual con fórmula polinómica</div></div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="exportMatrizCSV()" data-tip="Exportar a Excel/CSV">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M2,10 L2,13 C2,13.5 2.5,14 3,14 L13,14 C13.5,14 14,13.5 14,13 L14,10"/>
-            <polyline points="5,6 8,2 11,6"/>
-            <line x1="8" y1="2" x2="8" y2="11"/>
-          </svg>
+        <button class="btn btn-ghost" onclick="exportMatrizCSV()">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2,10 L2,13 C2,13.5 2.5,14 3,14 L13,14 C13.5,14 14,13.5 14,13 L14,10"/><polyline points="5,6 8,2 11,6"/><line x1="8" y1="2" x2="8" y2="11"/></svg>
           Exportar
         </button>
-        <button class="btn btn-accent" onclick="guardarCalculo()" data-tip="Guardar en historial">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="13,2 13,14 8,11 3,14 3,2"/>
-          </svg>
+        <button class="btn btn-accent" onclick="guardarCalculo()">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13,2 13,14 8,11 3,14 3,2"/></svg>
           Guardar
         </button>
       </div>
     </div>
-
     <div class="card">
       <div class="card-title">Contrato</div>
       <div class="grid-4">
@@ -305,7 +207,7 @@ function renderMatriz() {
         </div>
         <div class="input-group" style="margin:0">
           <label>Monto base ($)</label>
-          <input type="number" id="contrato-monto" value="${contratoActual?.monto_base || 100}" step="0.01"/>
+          <input type="number" id="contrato-monto" value="${contratoActual?.monto_base || 1000000}" step="0.01"/>
         </div>
       </div>
       <div class="grid-2" style="margin-top:12px">
@@ -326,71 +228,48 @@ function renderMatriz() {
       </div>
       <button class="btn btn-accent btn-sm" style="margin-top:12px" onclick="calcularMatriz()">Calcular matriz</button>
     </div>
-
     <div id="matriz-resultado"></div>
   `
-  
   document.getElementById('page-content').innerHTML = html
-  
   ;['mes-desde', 'mes-hasta'].forEach(id => {
     const s = document.getElementById(id)
     s.innerHTML = MESES_LARGO.map((m, i) => `<option value="${i}">${m}</option>`).join('')
   })
-  document.getElementById('mes-desde').value = contratoActual?.periodo_desde?.split('-')[1] ? parseInt(contratoActual.periodo_desde.split('-')[1]) - 1 : 8
-  document.getElementById('mes-hasta').value = contratoActual?.periodo_hasta?.split('-')[1] ? parseInt(contratoActual.periodo_hasta.split('-')[1]) - 1 : 2
-  
+  document.getElementById('mes-desde').value = 8
+  document.getElementById('mes-hasta').value = 2
   if (contratoActual) calcularMatriz()
 }
 
 async function cargarContrato(id) {
-  if (!id) {
-    contratoActual = null
-    renderMatriz()
-    return
-  }
-  
+  if (!id) { contratoActual = null; renderMatriz(); return }
   const { data } = await sb.from('contratos').select('*').eq('id', id).single()
-  contratoActual = data
-  renderMatriz()
+  contratoActual = data; renderMatriz()
 }
 
 function calcularMatriz() {
   const formulaId = document.getElementById('contrato-formula').value
   const formula = formulas.find(f => f.id === formulaId)
-  
-  if (!formula) {
-    toast('Seleccioná una fórmula', 'error')
-    return
-  }
-  
+  if (!formula) { toast('Seleccioná una fórmula', 'error'); return }
   const monto = parseFloat(document.getElementById('contrato-monto').value) || 0
   const mesDesde = parseInt(document.getElementById('mes-desde').value)
   const anioDesde = parseInt(document.getElementById('anio-desde').value)
   const mesHasta = parseInt(document.getElementById('mes-hasta').value)
   const anioHasta = parseInt(document.getElementById('anio-hasta').value)
-  
   const periodos = []
   let y = anioDesde, m = mesDesde
   for (let i = 0; i < 200; i++) {
     periodos.push({ y, m, key: `${y}-${String(m + 1).padStart(2, '0')}`, label: `${MESES_CORTO[m]}-${String(y).slice(2)}` })
     if (y === anioHasta && m === mesHasta) break
-    m++
-    if (m > 11) { m = 0; y++ }
+    m++; if (m > 11) { m = 0; y++ }
   }
-  
   renderMatrizTabla(formula, periodos, monto)
 }
 
 function renderMatrizTabla(formula, periodos, montoBase) {
-  const componentes = JSON.parse(formula.componentes)
-  
+  const componentes = parseComponentes(formula.componentes)
   const valoresPorIndice = {}
   const pkPrev = getPeriodoPrevio(periodos[0])
-  
-  componentes.forEach(comp => {
-    valoresPorIndice[comp.codigo] = periodos.map(p => getValue(comp.codigo, p.key))
-  })
-  
+  componentes.forEach(comp => { valoresPorIndice[comp.codigo] = periodos.map(p => getValue(comp.codigo, p.key)) })
   const totalesMensuales = periodos.map((p, i) => {
     let total = 0, valid = true
     componentes.forEach(comp => {
@@ -401,50 +280,33 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     })
     return { val: total, valid }
   })
-  
   let monto = montoBase
   const montos = [monto]
-  totalesMensuales.forEach(t => {
-    if (t.valid) monto = monto * (1 + t.val / 100)
-    montos.push(monto)
-  })
-  
+  totalesMensuales.forEach(t => { if (t.valid) monto = monto * (1 + t.val / 100); montos.push(monto) })
   let html = `
     <div class="card" style="margin-top:16px">
       <div class="card-title">Matriz mensual — ${formula.nombre}</div>
       <div class="matrix-wrap">
         <table class="matrix">
-          <thead>
-            <tr>
-              <th class="idx-col">Componente</th>
-              ${periodos.map(p => `<th>${p.label}</th>`).join('')}
-              <th class="col-total">Total</th>
-            </tr>
-          </thead>
+          <thead><tr>
+            <th class="idx-col">Componente</th>
+            ${periodos.map(p => `<th>${p.label}</th>`).join('')}
+            <th class="col-total">Total</th>
+          </tr></thead>
           <tbody>
   `
-  
   componentes.forEach(comp => {
     const meta = INDICES_META[comp.codigo] || { label: comp.codigo, color: 'tag-blue' }
-    
-    html += `<tr class="row-idx"><td class="idx-col">
-      <span class="tag ${meta.color}">${comp.codigo}</span>
-      <span style="color:var(--text3);font-size:10px;margin-left:6px">${comp.coef}%</span>
-    </td>`
-    
+    html += `<tr class="row-idx"><td class="idx-col"><span class="tag ${meta.color}">${comp.codigo}</span><span style="color:var(--text3);font-size:10px;margin-left:6px">${comp.coef}%</span></td>`
     let sumVar = 0
     periodos.forEach((p, i) => {
       const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
       const v1 = valoresPorIndice[comp.codigo][i]
       let varPct = null
-      if (v0 && v1 && v0 !== 0) {
-        varPct = ((v1 - v0) / v0) * 100
-        sumVar += varPct
-      }
+      if (v0 && v1 && v0 !== 0) { varPct = ((v1 - v0) / v0) * 100; sumVar += varPct }
       html += `<td>${varPct != null ? `<span class="${varPct >= 0 ? 'pct-pos' : 'pct-neg'}">${varPct >= 0 ? '+' : ''}${varPct.toFixed(2)}%</span>` : '—'}</td>`
     })
     html += `<td class="col-total">${sumVar.toFixed(2)}%</td></tr>`
-    
     html += `<tr class="row-afec"><td class="idx-col" style="padding-left:24px;font-size:11px">↳ Afección</td>`
     let sumAfec = 0
     periodos.forEach((p, i) => {
@@ -457,7 +319,6 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     })
     html += `<td class="col-total">${sumAfec.toFixed(2)}%</td></tr>`
   })
-  
   html += `<tr class="row-total"><td class="idx-col">Total ajuste mensual</td>`
   let acumPct = 0
   totalesMensuales.forEach(t => {
@@ -465,17 +326,11 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     if (t.valid) acumPct = ((1 + acumPct / 100) * (1 + t.val / 100) - 1) * 100
   })
   html += `<td class="col-total">${acumPct.toFixed(2)}%</td></tr>`
-  
   html += `<tr class="row-monto"><td class="idx-col">Monto contrato ($)</td>`
-  totalesMensuales.forEach((t, i) => {
-    html += `<td>${montos[i + 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>`
-  })
+  totalesMensuales.forEach((t, i) => { html += `<td>${montos[i + 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>` })
   html += `<td class="col-total">${montos[montos.length - 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td></tr>`
-  
   html += `</tbody></table></div></div>`
-  
   document.getElementById('matriz-resultado').innerHTML = html
-  
   window._matrizActual = { formula, periodos, montoBase, totalesMensuales, montos, componentes, valoresPorIndice }
 }
 
@@ -491,17 +346,10 @@ function getValue(codigo, periodo) {
 }
 
 function exportMatrizCSV() {
-  if (!window._matrizActual) {
-    toast('Calculá la matriz primero', 'warn')
-    return
-  }
-  
-  const { formula, periodos, componentes, valoresPorIndice, totalesMensuales, montos } = window._matrizActual
+  if (!window._matrizActual) { toast('Calculá la matriz primero', 'warn'); return }
+  const { periodos, componentes, valoresPorIndice, totalesMensuales, montos } = window._matrizActual
   const pkPrev = getPeriodoPrevio(periodos[0])
-  
-  const lines = []
-  lines.push(['Componente', 'Coef', ...periodos.map(p => p.label), 'Total'].join(';'))
-  
+  const lines = [['Componente', 'Coef', ...periodos.map(p => p.label), 'Total'].join(';')]
   componentes.forEach(comp => {
     const fila = [comp.codigo + ' Var%', comp.coef + '%']
     let sumVar = 0
@@ -512,11 +360,8 @@ function exportMatrizCSV() {
       if (v0 && v1 && v0 !== 0) { varPct = ((v1 - v0) / v0) * 100; sumVar += varPct }
       fila.push(varPct != null ? varPct.toFixed(2).replace('.', ',') : '')
     })
-    fila.push(sumVar.toFixed(2).replace('.', ','))
-    lines.push(fila.join(';'))
-    
-    const filaA = [comp.codigo + ' Afección', '']
-    let sumA = 0
+    fila.push(sumVar.toFixed(2).replace('.', ',')); lines.push(fila.join(';'))
+    const filaA = [comp.codigo + ' Afección', '']; let sumA = 0
     periodos.forEach((p, i) => {
       const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
       const v1 = valoresPorIndice[comp.codigo][i]
@@ -525,123 +370,67 @@ function exportMatrizCSV() {
       if (afec != null) sumA += afec
       filaA.push(afec != null ? afec.toFixed(2).replace('.', ',') : '')
     })
-    filaA.push(sumA.toFixed(2).replace('.', ','))
-    lines.push(filaA.join(';'))
+    filaA.push(sumA.toFixed(2).replace('.', ',')); lines.push(filaA.join(';'))
   })
-  
-  const filaT = ['TOTAL AJUSTE', '']
-  let acum = 0
-  totalesMensuales.forEach(t => {
-    filaT.push(t.valid ? t.val.toFixed(3).replace('.', ',') : '')
-    if (t.valid) acum = ((1 + acum / 100) * (1 + t.val / 100) - 1) * 100
-  })
-  filaT.push(acum.toFixed(2).replace('.', ','))
-  lines.push(filaT.join(';'))
-  
+  const filaT = ['TOTAL AJUSTE', '']; let acum = 0
+  totalesMensuales.forEach(t => { filaT.push(t.valid ? t.val.toFixed(3).replace('.', ',') : ''); if (t.valid) acum = ((1 + acum / 100) * (1 + t.val / 100) - 1) * 100 })
+  filaT.push(acum.toFixed(2).replace('.', ',')); lines.push(filaT.join(';'))
   const filaM = ['Monto ($)', montos[0].toString().replace('.', ',')]
-  totalesMensuales.forEach((t, i) => {
-    filaM.push(montos[i + 1].toFixed(2).replace('.', ','))
-  })
-  filaM.push(montos[montos.length - 1].toFixed(2).replace('.', ','))
-  lines.push(filaM.join(';'))
-  
-  const csv = lines.join('\n')
-  const blob = new Blob([new TextEncoder().encode('\ufeff' + csv)], { type: 'text/csv;charset=utf-8' })
+  totalesMensuales.forEach((t, i) => { filaM.push(montos[i + 1].toFixed(2).replace('.', ',')) })
+  filaM.push(montos[montos.length - 1].toFixed(2).replace('.', ',')); lines.push(filaM.join(';'))
+  const blob = new Blob([new TextEncoder().encode('\ufeff' + lines.join('\n'))], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   const nombre = document.getElementById('contrato-nombre').value || 'matriz'
-  a.href = url
-  a.download = `${nombre.replace(/\s+/g, '_')}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-  toast('CSV exportado ✓', 'success')
+  a.href = url; a.download = `${nombre.replace(/\s+/g, '_')}.csv`; a.click()
+  URL.revokeObjectURL(url); toast('CSV exportado ✓', 'success')
 }
 
 async function guardarCalculo() {
-  if (!window._matrizActual) {
-    toast('Calculá la matriz primero', 'warn')
-    return
-  }
-  
+  if (!window._matrizActual) { toast('Calculá la matriz primero', 'warn'); return }
   const { formula, montoBase, montos, totalesMensuales, periodos } = window._matrizActual
-  const montoFinal = montos[montos.length - 1]
-  let acum = 0
-  totalesMensuales.filter(t => t.valid).forEach(t => {
-    acum = ((1 + acum / 100) * (1 + t.val / 100) - 1) * 100
-  })
-  
+  const montoFinal = montos[montos.length - 1]; let acum = 0
+  totalesMensuales.filter(t => t.valid).forEach(t => { acum = ((1 + acum / 100) * (1 + t.val / 100) - 1) * 100 })
   const { error } = await sb.from('calculos_mensuales').insert({
-    org_id: currentOrg.id,
-    contrato_id: contratoActual?.id || null,
-    formula_snapshot: formula,
-    periodos_data: { periodos, totalesMensuales, montos },
-    ajuste_acumulado: acum,
-    monto_inicial: montoBase,
-    monto_final: montoFinal,
-    created_by: currentUser.id
+    org_id: currentOrg.id, contrato_id: contratoActual?.id || null,
+    formula_snapshot: formula, periodos_data: { periodos, totalesMensuales, montos },
+    ajuste_acumulado: acum, monto_inicial: montoBase, monto_final: montoFinal, created_by: currentUser.id
   })
-  
-  if (error) {
-    toast('Error al guardar: ' + error.message, 'error')
-  } else {
-    toast('Guardado en historial ✓', 'success')
-  }
+  if (error) { toast('Error al guardar: ' + error.message, 'error') } else { toast('Guardado en historial ✓', 'success') }
 }
 
-// ════ HISTORIAL ════
 async function renderHistorial() {
   const { data } = await sb.from('calculos_mensuales').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false })
-  
   let html = `<div class="page-head"><div><div class="page-title">Historial</div><div class="page-sub">Cálculos guardados</div></div></div><div class="card">`
-  
-  if (!data || data.length === 0) {
-    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin cálculos guardados</div>`
-  } else {
-    data.forEach(c => {
-      const fecha = new Date(c.created_at).toLocaleDateString('es-AR')
-      html += `<div class="hist-card"><div class="hist-head"><div><div style="font-size:14px;font-weight:500">${c.formula_snapshot.nombre}</div><div class="hist-meta">${fecha}</div><div class="hist-meta">$${c.monto_inicial.toLocaleString('es-AR')} → <strong style="color:var(--green)">$${c.monto_final.toLocaleString('es-AR')}</strong></div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700" class="${c.ajuste_acumulado >= 0 ? 'pct-up' : 'pct-dn'}">${c.ajuste_acumulado >= 0 ? '+' : ''}${c.ajuste_acumulado.toFixed(2)}%</div></div></div></div>`
-    })
-  }
-  
-  html += `</div>`
-  document.getElementById('page-content').innerHTML = html
+  if (!data || data.length === 0) { html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin cálculos guardados</div>` }
+  else { data.forEach(c => {
+    const fecha = new Date(c.created_at).toLocaleDateString('es-AR')
+    html += `<div class="hist-card"><div class="hist-head"><div><div style="font-size:14px;font-weight:500">${c.formula_snapshot.nombre}</div><div class="hist-meta">${fecha}</div><div class="hist-meta">$${c.monto_inicial.toLocaleString('es-AR')} → <strong style="color:var(--green)">$${c.monto_final.toLocaleString('es-AR')}</strong></div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700" class="${c.ajuste_acumulado >= 0 ? 'pct-up' : 'pct-dn'}">${c.ajuste_acumulado >= 0 ? '+' : ''}${c.ajuste_acumulado.toFixed(2)}%</div></div></div></div>`
+  }) }
+  html += `</div>`; document.getElementById('page-content').innerHTML = html
 }
 
-// ════ FÓRMULAS ════
 async function renderFormulas() {
   let html = `<div class="page-head"><div><div class="page-title">Fórmulas</div><div class="page-sub">Polinómicas de tu organización</div></div><button class="btn btn-accent" onclick="toast('Función en desarrollo','warn')">Nueva fórmula</button></div><div class="card">`
-  
-  if (formulas.length === 0) {
-    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin fórmulas — creá la primera</div>`
-  } else {
-    formulas.forEach(f => {
-      const comps = typeof f.componentes === 'string' ? JSON.parse(f.componentes) : f.componentes
-      html += `<div class="hist-card"><div class="hist-head"><div style="flex:1"><div style="font-size:14px;font-weight:500;margin-bottom:6px">${f.nombre}</div>${f.empresa ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${f.empresa}</div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:5px">${comps.map(c => `<span class="tag ${INDICES_META[c.codigo]?.color || 'tag-blue'}">${c.codigo} ${c.coef}%</span>`).join('')}</div></div></div></div>`
-    })
-  }
-  
-  html += `</div>`
-  document.getElementById('page-content').innerHTML = html
+  if (formulas.length === 0) { html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin fórmulas — creá la primera</div>` }
+  else { formulas.forEach(f => {
+    const comps = parseComponentes(f.componentes)
+    html += `<div class="hist-card"><div class="hist-head"><div style="flex:1"><div style="font-size:14px;font-weight:500;margin-bottom:6px">${f.nombre}</div>${f.empresa ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${f.empresa}</div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:5px">${comps.map(c => `<span class="tag ${INDICES_META[c.codigo]?.color || 'tag-blue'}">${c.codigo} ${c.coef}%</span>`).join('')}</div></div></div></div>`
+  }) }
+  html += `</div>`; document.getElementById('page-content').innerHTML = html
 }
 
-// ════ ÍNDICES ════
 async function renderIndices() {
   const { data: catalogo } = await sb.from('indices_catalogo').select('*')
-  
   let html = `<div class="page-head"><div><div class="page-title">Índices</div><div class="page-sub">Estado de fuentes</div></div><button class="btn btn-ghost" onclick="sincronizarIndices()">Sincronizar</button></div><div class="card">`
-  
   catalogo?.forEach(idx => {
     const valores = indicesValores[idx.codigo] || {}
     const periodos = Object.keys(valores).sort().reverse()
-    const ultimo = periodos[0]
-    const valorUltimo = ultimo ? valores[ultimo].valor : null
+    const ultimo = periodos[0]; const valorUltimo = ultimo ? valores[ultimo].valor : null
     const isApi = idx.fuente.startsWith('api')
-    
     html += `<div class="hist-card"><div class="hist-head"><div><div style="font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px"><span class="tag tag-green">${idx.codigo}</span>${idx.nombre}</div><div class="hist-meta">Último: ${valorUltimo ? valorUltimo.toFixed(2) : '—'} ${ultimo ? `(${ultimo})` : ''}</div></div><div>${isApi ? '<span class="source-chip ok">● API activa</span>' : '<span class="source-chip manual">⚠ Manual</span>'}</div></div><div style="margin-top:10px;font-size:11px;color:var(--text3);line-height:1.6">${idx.descripcion || ''}</div></div>`
   })
-  
-  html += `</div>`
-  document.getElementById('page-content').innerHTML = html
+  html += `</div>`; document.getElementById('page-content').innerHTML = html
 }
 
 async function sincronizarIndices() {
@@ -654,38 +443,25 @@ async function sincronizarIndices() {
       await sb.from('indices_valores').upsert({ codigo: 'IPC', periodo: fecha.slice(0, 7), valor, fuente_real: 'auto', actualizado_at: new Date().toISOString() })
     }
   } catch (e) {}
-  
-  await loadIndicesValores()
-  renderIndices()
-  toast('Sincronización completa ✓', 'success')
+  await loadIndicesValores(); renderIndices(); toast('Sincronización completa ✓', 'success')
 }
 
-// ════ ALERTAS ════
 async function renderAlertas() {
   const { data } = await sb.from('alertas').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).limit(50)
-  
   let html = `<div class="page-head"><div><div class="page-title">Alertas</div><div class="page-sub">Notificaciones</div></div></div><div class="card">`
-  
-  if (!data || data.length === 0) {
-    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin alertas</div>`
-  } else {
-    data.forEach(a => {
-      const fecha = new Date(a.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-      html += `<div class="alerta-item ${a.leida ? '' : 'no-leida'}" onclick="marcarLeida('${a.id}')"><div class="alerta-title">${a.titulo}</div><div class="alerta-msg">${a.mensaje || ''}</div><div class="alerta-footer"><span>${fecha}</span><span>${a.leida ? 'Leída' : 'Nueva'}</span></div></div>`
-    })
-  }
-  
-  html += `</div>`
-  document.getElementById('page-content').innerHTML = html
+  if (!data || data.length === 0) { html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin alertas</div>` }
+  else { data.forEach(a => {
+    const fecha = new Date(a.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    html += `<div class="alerta-item ${a.leida ? '' : 'no-leida'}" onclick="marcarLeida('${a.id}')"><div class="alerta-title">${a.titulo}</div><div class="alerta-msg">${a.mensaje || ''}</div><div class="alerta-footer"><span>${fecha}</span><span>${a.leida ? 'Leída' : 'Nueva'}</span></div></div>`
+  }) }
+  html += `</div>`; document.getElementById('page-content').innerHTML = html
 }
 
 async function marcarLeida(id) {
   await sb.from('alertas').update({ leida: true }).eq('id', id)
-  await checkAlertas()
-  renderAlertas()
+  await checkAlertas(); renderAlertas()
 }
 
-// ════ UTILS ════
 function toast(msg, type = 'success') {
   const c = document.createElement('div')
   c.className = 'toast ' + type
