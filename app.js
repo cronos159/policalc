@@ -1,10 +1,10 @@
 // ════════════════════════════════════════════════════════════════
-// POLICALC v2 — Frontend completo con GitHub OAuth
+// POLICALC v2 — Frontend completo con matriz mensual
 // ════════════════════════════════════════════════════════════════
 
-// ⚠️ REEMPLAZÁ ESTOS VALORES con los tuyos de Supabase (Project Settings → API)
-const SUPABASE_URL = 'https://uhdglwjpghdfjjmzwtub.supabase.co'
-const SUPABASE_KEY = 'sb_publishable_WgbN4yhsgSQwReeRiPgFbw_gGb205J7'
+// ⚠️ REEMPLAZÁ ESTOS VALORES con los tuyos de Supabase
+const SUPABASE_URL = 'https://XXXXXXXX.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3M...'
 
 const { createClient } = supabase
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -13,31 +13,37 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
 const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
 
+const INDICES_META = {
+  'IPC':  {label:'IPC General (INDEC)', color:'tag-green'},
+  'IPIM': {label:'IPIM General (INDEC)', color:'tag-amber'},
+  'CCT':  {label:'CCT 644/12 Petroleros', color:'tag-blue'},
+  'USD':  {label:'Dólar Oficial BNA', color:'tag-red'},
+  'GR3':  {label:'GR3 Gasoil YPF', color:'tag-purple'},
+}
+
 // ════ ESTADO GLOBAL ════
 let currentUser = null
 let currentOrg = null
 let formulas = []
-let indicesValores = {} // {IPC: {'2024-09': 123.45}}
+let contratos = []
+let contratoActual = null
+let indicesValores = {}
 let collapsedRows = {}
 let chartMonto = null
 
 // ════ INIT ════
 window.onload = async () => {
-  // Manejar callback de OAuth
   const hashParams = new URLSearchParams(window.location.hash.substring(1))
   if (hashParams.get('access_token')) {
-    // Venimos del callback de GitHub
-    const { data, error } = await sb.auth.getSession()
+    const { data } = await sb.auth.getSession()
     if (data.session) {
       await loadUserData()
       showApp()
-      // Limpiar hash de la URL
       window.history.replaceState(null, '', window.location.pathname)
       return
     }
   }
   
-  // Verificar sesión existente
   const { data: { session } } = await sb.auth.getSession()
   if (!session) {
     showLogin()
@@ -46,7 +52,6 @@ window.onload = async () => {
     showApp()
   }
   
-  // Polling alertas cada 30s
   setInterval(checkAlertas, 30000)
   setInterval(updateClock, 1000)
   updateClock()
@@ -64,12 +69,10 @@ function showLogin() {
       </svg>
       Continuar con GitHub
     </button>
-    
     <div style="position:relative;margin:20px 0">
       <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:var(--border)"></div>
       <div style="position:relative;text-align:center;background:var(--surface);display:inline-block;padding:0 12px;color:var(--text3);font-size:11px;left:50%;transform:translateX(-50%)">O con email</div>
     </div>
-    
     <input type="email" id="email-input" placeholder="Email"/>
     <input type="password" id="pw-input" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()"/>
     <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="doLogin()">Ingresar con email</button>
@@ -91,17 +94,11 @@ function showSignup() {
 }
 
 async function loginWithGitHub() {
-  const { data, error } = await sb.auth.signInWithOAuth({
+  const { error } = await sb.auth.signInWithOAuth({
     provider: 'github',
-    options: {
-      redirectTo: window.location.origin
-    }
+    options: { redirectTo: window.location.origin }
   })
-  
-  if (error) {
-    toast('Error al conectar con GitHub: ' + error.message, 'error')
-  }
-  // El navegador redirige automáticamente a GitHub
+  if (error) toast('Error: ' + error.message, 'error')
 }
 
 async function doLogin() {
@@ -115,7 +112,7 @@ async function doLogin() {
     return
   }
   
-  const { data, error } = await sb.auth.signInWithPassword({ email, password: pw })
+  const { error } = await sb.auth.signInWithPassword({ email, password: pw })
   
   if (error) {
     msg.textContent = error.message === 'Invalid login credentials' ? 'Email o contraseña incorrectos' : error.message
@@ -152,8 +149,7 @@ async function doSignup() {
   }
   
   const { error } = await sb.auth.signUp({
-    email,
-    password: pw,
+    email, password: pw,
     options: { data: { nombre } }
   })
   
@@ -161,7 +157,7 @@ async function doSignup() {
     msg.textContent = error.message
     msg.className = 'login-msg err'
   } else {
-    msg.textContent = 'Cuenta creada — verificá tu email para confirmar y después ingresá'
+    msg.textContent = 'Cuenta creada — verificá tu email'
     msg.className = 'login-msg'
   }
 }
@@ -175,11 +171,10 @@ async function loadUserData() {
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return
   
-  // Obtener datos de usuario desde tabla usuarios
   const { data: userData } = await sb.from('usuarios').select('*, org:organizaciones(*)').eq('id', user.id).single()
   
   if (!userData || !userData.org) {
-    toast('Usuario sin organización asignada — contactá al administrador', 'error')
+    toast('Usuario sin organización asignada', 'error')
     await sb.auth.signOut()
     return
   }
@@ -190,15 +185,24 @@ async function loadUserData() {
   document.getElementById('org-name-display').textContent = currentOrg.nombre
   document.getElementById('user-info-display').textContent = `${userData.nombre || userData.email} (${userData.rol})`
   
-  // Cargar fórmulas de la org
-  const { data: formData } = await sb.from('formulas').select('*').eq('org_id', currentOrg.id)
-  formulas = formData || []
+  // Cargar datos
+  await Promise.all([
+    loadFormulas(),
+    loadContratos(),
+    loadIndicesValores()
+  ])
   
-  // Cargar valores de índices
-  await loadIndicesValores()
-  
-  // Check alertas pendientes
   await checkAlertas()
+}
+
+async function loadFormulas() {
+  const { data } = await sb.from('formulas').select('*').eq('org_id', currentOrg.id)
+  formulas = data || []
+}
+
+async function loadContratos() {
+  const { data } = await sb.from('contratos').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false })
+  contratos = data || []
 }
 
 async function loadIndicesValores() {
@@ -215,8 +219,8 @@ async function loadIndicesValores() {
 }
 
 async function checkAlertas() {
-  const { data, count } = await sb.from('alertas')
-    .select('*', { count: 'exact' })
+  const { count } = await sb.from('alertas')
+    .select('*', { count: 'exact', head: true })
     .eq('org_id', currentOrg.id)
     .eq('leida', false)
   
@@ -244,11 +248,8 @@ function updateClock() {
 // ════ NAVEGACIÓN ════
 function goPage(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
-  
   const idx = { 'matriz': 0, 'hist': 1, 'form': 2, 'indices': 3, 'alertas': 4 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
-  
-  const content = document.getElementById('page-content')
   
   if (page === 'matriz') renderMatriz()
   else if (page === 'hist') renderHistorial()
@@ -257,77 +258,366 @@ function goPage(page) {
   else if (page === 'alertas') renderAlertas()
 }
 
-// ════ PÁGINA MATRIZ ════
-async function renderMatriz() {
-  // TODO: implementar matriz completa similar a la versión anterior
-  // pero conectada a Supabase
-  
-  document.getElementById('page-content').innerHTML = `
+// ════ PÁGINA MATRIZ (NUEVA) ════
+function renderMatriz() {
+  let html = `
     <div class="page-head">
       <div>
         <div class="page-title">Matriz de actualización</div>
-        <div class="page-sub">En desarrollo — conectado a Supabase ✓</div>
+        <div class="page-sub">Cálculo mensual con fórmula polinómica</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="exportMatrizCSV()" data-tip="Exportar a Excel/CSV">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M2,10 L2,13 C2,13.5 2.5,14 3,14 L13,14 C13.5,14 14,13.5 14,13 L14,10"/>
+            <polyline points="5,6 8,2 11,6"/>
+            <line x1="8" y1="2" x2="8" y2="11"/>
+          </svg>
+          Exportar
+        </button>
+        <button class="btn btn-accent" onclick="guardarCalculo()" data-tip="Guardar en historial">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="13,2 13,14 8,11 3,14 3,2"/>
+          </svg>
+          Guardar
+        </button>
       </div>
     </div>
-    <div class="card">
-      <div class="card-title">Estado actual</div>
-      <p style="margin-bottom:8px">✅ Login con GitHub funcionando</p>
-      <p style="margin-bottom:8px">✅ Multi-empresa configurado</p>
-      <p style="margin-bottom:8px">✅ Base de datos conectada</p>
-      <p style="margin-bottom:8px">✅ Usuario: ${currentUser.email}</p>
-      <p style="margin-bottom:8px">✅ Organización: ${currentOrg.nombre}</p>
-      <p style="margin-bottom:8px">⏳ Matriz mensual en desarrollo</p>
-      <p style="margin-bottom:8px">⏳ Scraper YPF en siguiente fase</p>
-    </div>
-    
-    <div class="card">
-      <div class="card-title">Próximos pasos</div>
-      <p style="font-size:13px;color:var(--text2);line-height:1.6">
-        La matriz completa con cálculo mes a mes, override manual de valores, y exportación CSV se completa en la siguiente iteración.
-        Por ahora podés probar el sistema de <strong>Fórmulas</strong>, <strong>Índices</strong> y <strong>Alertas</strong> que ya están funcionando con la base de datos.
-      </p>
-    </div>
-  `
-}
 
-// ════ PÁGINA HISTORIAL ════
-async function renderHistorial() {
-  const { data: calculos } = await sb.from('calculos_mensuales')
-    .select('*')
-    .eq('org_id', currentOrg.id)
-    .order('created_at', { ascending: false })
-  
-  let html = `
-    <div class="page-head">
-      <div>
-        <div class="page-title">Historial</div>
-        <div class="page-sub">Cálculos guardados de tu organización</div>
-      </div>
-    </div>
     <div class="card">
-  `
-  
-  if (!calculos || calculos.length === 0) {
-    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin cálculos guardados aún</div>`
-  } else {
-    calculos.forEach(c => {
-      const fecha = new Date(c.created_at).toLocaleDateString('es-AR')
-      html += `
-        <div class="hist-card">
-          <div class="hist-head">
-            <div>
-              <div style="font-size:14px;font-weight:500">${c.formula_snapshot.nombre || 'Sin nombre'}</div>
-              <div class="hist-meta">Guardado el ${fecha}</div>
-              <div class="hist-meta">$${c.monto_inicial.toLocaleString('es-AR')} → <strong style="color:var(--green)">$${c.monto_final.toLocaleString('es-AR')}</strong></div>
-            </div>
-            <div style="text-align:right">
-              <div style="font-size:22px;font-weight:700" class="${c.ajuste_acumulado >= 0 ? 'pct-up' : 'pct-dn'}">
-                ${c.ajuste_acumulado >= 0 ? '+' : ''}${c.ajuste_acumulado.toFixed(2)}%
-              </div>
-            </div>
+      <div class="card-title">Contrato</div>
+      <div class="grid-4">
+        <div class="input-group" style="margin:0">
+          <label>Seleccionar contrato</label>
+          <select id="contrato-select" onchange="cargarContrato(this.value)">
+            <option value="">-- Nuevo contrato --</option>
+            ${contratos.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Nombre</label>
+          <input type="text" id="contrato-nombre" placeholder="Ej: Chevron 2024-2026" value="${contratoActual?.nombre || ''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Fórmula</label>
+          <select id="contrato-formula">
+            ${formulas.map(f => `<option value="${f.id}" ${contratoActual?.formula_id === f.id ? 'selected' : ''}>${f.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Monto base ($)</label>
+          <input type="number" id="contrato-monto" value="${contratoActual?.monto_base || 100}" step="0.01"/>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="input-group" style="margin:0">
+          <label>Período desde</label>
+          <div style="display:flex;gap:6px">
+            <select id="mes-desde"></select>
+            <input type="number" id="anio-desde" value="2024" min="2020" max="2030" style="width:80px"/>
           </div>
         </div>
-      `
+        <div class="input-group" style="margin:0">
+          <label>Período hasta</label>
+          <div style="display:flex;gap:6px">
+            <select id="mes-hasta"></select>
+            <input type="number" id="anio-hasta" value="2026" min="2020" max="2030" style="width:80px"/>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-accent btn-sm" style="margin-top:12px" onclick="calcularMatriz()">Calcular matriz</button>
+    </div>
+
+    <div id="matriz-resultado"></div>
+  `
+  
+  document.getElementById('page-content').innerHTML = html
+  
+  // Inicializar selects de meses
+  ;['mes-desde', 'mes-hasta'].forEach(id => {
+    const s = document.getElementById(id)
+    s.innerHTML = MESES_LARGO.map((m, i) => `<option value="${i}">${m}</option>`).join('')
+  })
+  document.getElementById('mes-desde').value = contratoActual?.periodo_desde?.split('-')[1] ? parseInt(contratoActual.periodo_desde.split('-')[1]) - 1 : 8
+  document.getElementById('mes-hasta').value = contratoActual?.periodo_hasta?.split('-')[1] ? parseInt(contratoActual.periodo_hasta.split('-')[1]) - 1 : 2
+  
+  if (contratoActual) calcularMatriz()
+}
+
+async function cargarContrato(id) {
+  if (!id) {
+    contratoActual = null
+    renderMatriz()
+    return
+  }
+  
+  const { data } = await sb.from('contratos').select('*').eq('id', id).single()
+  contratoActual = data
+  renderMatriz()
+}
+
+function calcularMatriz() {
+  const formulaId = document.getElementById('contrato-formula').value
+  const formula = formulas.find(f => f.id === formulaId)
+  
+  if (!formula) {
+    toast('Seleccioná una fórmula', 'error')
+    return
+  }
+  
+  const monto = parseFloat(document.getElementById('contrato-monto').value) || 0
+  const mesDesde = parseInt(document.getElementById('mes-desde').value)
+  const anioDesde = parseInt(document.getElementById('anio-desde').value)
+  const mesHasta = parseInt(document.getElementById('mes-hasta').value)
+  const anioHasta = parseInt(document.getElementById('anio-hasta').value)
+  
+  // Generar períodos
+  const periodos = []
+  let y = anioDesde, m = mesDesde
+  for (let i = 0; i < 200; i++) {
+    periodos.push({ y, m, key: `${y}-${String(m + 1).padStart(2, '0')}`, label: `${MESES_CORTO[m]}-${String(y).slice(2)}` })
+    if (y === anioHasta && m === mesHasta) break
+    m++
+    if (m > 11) { m = 0; y++ }
+  }
+  
+  // Construir matriz
+  renderMatrizTabla(formula, periodos, monto)
+}
+
+function renderMatrizTabla(formula, periodos, montoBase) {
+  const componentes = JSON.parse(formula.componentes)
+  
+  // Calcular valores
+  const valoresPorIndice = {}
+  const pkPrev = getPeriodoPrevio(periodos[0])
+  
+  componentes.forEach(comp => {
+    valoresPorIndice[comp.codigo] = periodos.map(p => getValue(comp.codigo, p.key))
+  })
+  
+  // Calcular totales mensuales
+  const totalesMensuales = periodos.map((p, i) => {
+    let total = 0, valid = true
+    componentes.forEach(comp => {
+      const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
+      const v1 = valoresPorIndice[comp.codigo][i]
+      if (!v0 || !v1 || v0 === 0) { valid = false; return }
+      total += ((v1 - v0) / v0) * 100 * (comp.coef / 100)
+    })
+    return { val: total, valid }
+  })
+  
+  // Calcular montos
+  let monto = montoBase
+  const montos = [monto]
+  totalesMensuales.forEach(t => {
+    if (t.valid) monto = monto * (1 + t.val / 100)
+    montos.push(monto)
+  })
+  
+  // Renderizar tabla
+  let html = `
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Matriz mensual — ${formula.nombre}</div>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th class="idx-col">Componente</th>
+              ${periodos.map(p => `<th>${p.label}</th>`).join('')}
+              <th class="col-total">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+  `
+  
+  // Filas por componente
+  componentes.forEach(comp => {
+    const meta = INDICES_META[comp.codigo] || { label: comp.codigo, color: 'tag-blue' }
+    
+    // Fila variación
+    html += `<tr class="row-idx"><td class="idx-col">
+      <span class="tag ${meta.color}">${comp.codigo}</span>
+      <span style="color:var(--text3);font-size:10px;margin-left:6px">${comp.coef}%</span>
+    </td>`
+    
+    let sumVar = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
+      const v1 = valoresPorIndice[comp.codigo][i]
+      let varPct = null
+      if (v0 && v1 && v0 !== 0) {
+        varPct = ((v1 - v0) / v0) * 100
+        sumVar += varPct
+      }
+      html += `<td>${varPct != null ? `<span class="${varPct >= 0 ? 'pct-pos' : 'pct-neg'}">${varPct >= 0 ? '+' : ''}${varPct.toFixed(2)}%</span>` : '—'}</td>`
+    })
+    html += `<td class="col-total">${sumVar.toFixed(2)}%</td></tr>`
+    
+    // Fila afección
+    html += `<tr class="row-afec"><td class="idx-col" style="padding-left:24px;font-size:11px">↳ Afección</td>`
+    let sumAfec = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
+      const v1 = valoresPorIndice[comp.codigo][i]
+      let afec = null
+      if (v0 && v1 && v0 !== 0) afec = ((v1 - v0) / v0) * 100 * (comp.coef / 100)
+      if (afec != null) sumAfec += afec
+      html += `<td>${afec != null ? (afec >= 0 ? '+' : '') + afec.toFixed(2) + '%' : '—'}</td>`
+    })
+    html += `<td class="col-total">${sumAfec.toFixed(2)}%</td></tr>`
+  })
+  
+  // Total ajuste
+  html += `<tr class="row-total"><td class="idx-col">Total ajuste mensual</td>`
+  let acumPct = 0
+  totalesMensuales.forEach(t => {
+    html += `<td>${t.valid ? (t.val >= 0 ? '+' : '') + t.val.toFixed(3) + '%' : '—'}</td>`
+    if (t.valid) acumPct = ((1 + acumPct / 100) * (1 + t.val / 100) - 1) * 100
+  })
+  html += `<td class="col-total">${acumPct.toFixed(2)}%</td></tr>`
+  
+  // Monto
+  html += `<tr class="row-monto"><td class="idx-col">Monto contrato ($)</td>`
+  totalesMensuales.forEach((t, i) => {
+    html += `<td>${montos[i + 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>`
+  })
+  html += `<td class="col-total">${montos[montos.length - 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td></tr>`
+  
+  html += `</tbody></table></div></div>`
+  
+  document.getElementById('matriz-resultado').innerHTML = html
+  
+  // Guardar para exportar
+  window._matrizActual = { formula, periodos, montoBase, totalesMensuales, montos, componentes, valoresPorIndice }
+}
+
+function getPeriodoPrevio(periodo) {
+  let m = periodo.m - 1, y = periodo.y
+  if (m < 0) { m = 11; y-- }
+  return `${y}-${String(m + 1).padStart(2, '0')}`
+}
+
+function getValue(codigo, periodo) {
+  const val = indicesValores[codigo]?.[periodo]
+  return val ? val.valor : null
+}
+
+function exportMatrizCSV() {
+  if (!window._matrizActual) {
+    toast('Calculá la matriz primero', 'warn')
+    return
+  }
+  
+  const { formula, periodos, componentes, valoresPorIndice, totalesMensuales, montos } = window._matrizActual
+  const pkPrev = getPeriodoPrevio(periodos[0])
+  
+  const lines = []
+  lines.push(['Componente', 'Coef', ...periodos.map(p => p.label), 'Total'].join(';'))
+  
+  componentes.forEach(comp => {
+    // Variación
+    const fila = [comp.codigo + ' Var%', comp.coef + '%']
+    let sumVar = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
+      const v1 = valoresPorIndice[comp.codigo][i]
+      let varPct = null
+      if (v0 && v1 && v0 !== 0) { varPct = ((v1 - v0) / v0) * 100; sumVar += varPct }
+      fila.push(varPct != null ? varPct.toFixed(2).replace('.', ',') : '')
+    })
+    fila.push(sumVar.toFixed(2).replace('.', ','))
+    lines.push(fila.join(';'))
+    
+    // Afección
+    const filaA = [comp.codigo + ' Afección', '']
+    let sumA = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
+      const v1 = valoresPorIndice[comp.codigo][i]
+      let afec = null
+      if (v0 && v1 && v0 !== 0) afec = ((v1 - v0) / v0) * 100 * (comp.coef / 100)
+      if (afec != null) sumA += afec
+      filaA.push(afec != null ? afec.toFixed(2).replace('.', ',') : '')
+    })
+    filaA.push(sumA.toFixed(2).replace('.', ','))
+    lines.push(filaA.join(';'))
+  })
+  
+  // Total
+  const filaT = ['TOTAL AJUSTE', '']
+  let acum = 0
+  totalesMensuales.forEach(t => {
+    filaT.push(t.valid ? t.val.toFixed(3).replace('.', ',') : '')
+    if (t.valid) acum = ((1 + acum / 100) * (1 + t.val / 100) - 1) * 100
+  })
+  filaT.push(acum.toFixed(2).replace('.', ','))
+  lines.push(filaT.join(';'))
+  
+  // Monto
+  const filaM = ['Monto ($)', montos[0].toString().replace('.', ',')]
+  totalesMensuales.forEach((t, i) => {
+    filaM.push(montos[i + 1].toFixed(2).replace('.', ','))
+  })
+  filaM.push(montos[montos.length - 1].toFixed(2).replace('.', ','))
+  lines.push(filaM.join(';'))
+  
+  const csv = lines.join('\n')
+  const blob = new Blob([new TextEncoder().encode('\ufeff' + csv)], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const nombre = document.getElementById('contrato-nombre').value || 'matriz'
+  a.href = url
+  a.download = `${nombre.replace(/\s+/g, '_')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  toast('CSV exportado ✓', 'success')
+}
+
+async function guardarCalculo() {
+  if (!window._matrizActual) {
+    toast('Calculá la matriz primero', 'warn')
+    return
+  }
+  
+  const { formula, montoBase, montos, totalesMensuales, periodos } = window._matrizActual
+  const montoFinal = montos[montos.length - 1]
+  let acum = 0
+  totalesMensuales.filter(t => t.valid).forEach(t => {
+    acum = ((1 + acum / 100) * (1 + t.val / 100) - 1) * 100
+  })
+  
+  const { error } = await sb.from('calculos_mensuales').insert({
+    org_id: currentOrg.id,
+    contrato_id: contratoActual?.id || null,
+    formula_snapshot: formula,
+    periodos_data: { periodos, totalesMensuales, montos },
+    ajuste_acumulado: acum,
+    monto_inicial: montoBase,
+    monto_final: montoFinal,
+    created_by: currentUser.id
+  })
+  
+  if (error) {
+    toast('Error al guardar: ' + error.message, 'error')
+  } else {
+    toast('Guardado en historial ✓', 'success')
+  }
+}
+
+// ════ RESTO DE PÁGINAS (simplificadas) ════
+async function renderHistorial() {
+  const { data } = await sb.from('calculos_mensuales').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false })
+  
+  let html = `<div class="page-head"><div><div class="page-title">Historial</div><div class="page-sub">Cálculos guardados</div></div></div><div class="card">`
+  
+  if (!data || data.length === 0) {
+    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin cálculos guardados</div>`
+  } else {
+    data.forEach(c => {
+      const fecha = new Date(c.created_at).toLocaleDateString('es-AR')
+      html += `<div class="hist-card"><div class="hist-head"><div><div style="font-size:14px;font-weight:500">${c.formula_snapshot.nombre}</div><div class="hist-meta">${fecha}</div><div class="hist-meta">$${c.monto_inicial.toLocaleString('es-AR')} → <strong style="color:var(--green)">$${c.monto_final.toLocaleString('es-AR')}</strong></div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700" class="${c.ajuste_acumulado >= 0 ? 'pct-up' : 'pct-dn'}">${c.ajuste_acumulado >= 0 ? '+' : ''}${c.ajuste_acumulado.toFixed(2)}%</div></div></div></div>`
     })
   }
   
@@ -335,38 +625,15 @@ async function renderHistorial() {
   document.getElementById('page-content').innerHTML = html
 }
 
-// ════ PÁGINA FÓRMULAS ════
 async function renderFormulas() {
-  let html = `
-    <div class="page-head">
-      <div>
-        <div class="page-title">Fórmulas</div>
-        <div class="page-sub">Polinómicas de tu organización</div>
-      </div>
-      <button class="btn btn-accent" onclick="showNewFormula()">Nueva fórmula</button>
-    </div>
-    <div class="card">
-  `
+  let html = `<div class="page-head"><div><div class="page-title">Fórmulas</div><div class="page-sub">Polinómicas de tu organización</div></div><button class="btn btn-accent" onclick="toast('Función en desarrollo','warn')">Nueva fórmula</button></div><div class="card">`
   
   if (formulas.length === 0) {
-    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin fórmulas creadas — creá la primera</div>`
+    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin fórmulas — creá la primera</div>`
   } else {
     formulas.forEach(f => {
       const comps = JSON.parse(f.componentes)
-      html += `
-        <div class="hist-card">
-          <div class="hist-head">
-            <div style="flex:1">
-              <div style="font-size:14px;font-weight:500;margin-bottom:6px">${f.nombre}</div>
-              ${f.empresa ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${f.empresa}</div>` : ''}
-              <div style="display:flex;flex-wrap:wrap;gap:5px">
-                ${comps.map(c => `<span class="tag tag-blue">${c.codigo} ${c.coef}%</span>`).join('')}
-              </div>
-            </div>
-            <button class="btn btn-danger btn-sm" onclick="borrarFormula('${f.id}')">Borrar</button>
-          </div>
-        </div>
-      `
+      html += `<div class="hist-card"><div class="hist-head"><div style="flex:1"><div style="font-size:14px;font-weight:500;margin-bottom:6px">${f.nombre}</div>${f.empresa ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${f.empresa}</div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:5px">${comps.map(c => `<span class="tag ${INDICES_META[c.codigo]?.color || 'tag-blue'}">${c.codigo} ${c.coef}%</span>`).join('')}</div></div></div></div>`
     })
   }
   
@@ -374,65 +641,19 @@ async function renderFormulas() {
   document.getElementById('page-content').innerHTML = html
 }
 
-function showNewFormula() {
-  // TODO: modal para crear nueva fórmula
-  toast('Función en desarrollo', 'warn')
-}
-
-async function borrarFormula(id) {
-  if (!confirm('¿Seguro que querés borrar esta fórmula?')) return
-  
-  const { error } = await sb.from('formulas').delete().eq('id', id)
-  
-  if (error) {
-    toast('Error al borrar: ' + error.message, 'error')
-  } else {
-    formulas = formulas.filter(f => f.id !== id)
-    renderFormulas()
-    toast('Fórmula borrada', 'success')
-  }
-}
-
-// ════ PÁGINA ÍNDICES ════
 async function renderIndices() {
   const { data: catalogo } = await sb.from('indices_catalogo').select('*')
   
-  let html = `
-    <div class="page-head">
-      <div>
-        <div class="page-title">Índices</div>
-        <div class="page-sub">Estado de fuentes de datos</div>
-      </div>
-      <button class="btn btn-ghost" onclick="sincronizarIndices()">Sincronizar</button>
-    </div>
-    <div class="card">
-  `
+  let html = `<div class="page-head"><div><div class="page-title">Índices</div><div class="page-sub">Estado de fuentes</div></div><button class="btn btn-ghost" onclick="sincronizarIndices()">Sincronizar</button></div><div class="card">`
   
   catalogo?.forEach(idx => {
     const valores = indicesValores[idx.codigo] || {}
     const periodos = Object.keys(valores).sort().reverse()
     const ultimo = periodos[0]
     const valorUltimo = ultimo ? valores[ultimo].valor : null
-    
     const isApi = idx.fuente.startsWith('api')
     
-    html += `
-      <div class="hist-card">
-        <div class="hist-head">
-          <div>
-            <div style="font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px">
-              <span class="tag tag-green">${idx.codigo}</span>
-              ${idx.nombre}
-            </div>
-            <div class="hist-meta">Último valor: ${valorUltimo ? valorUltimo.toFixed(2) : '—'} ${ultimo ? `(${ultimo})` : ''}</div>
-          </div>
-          <div>
-            ${isApi ? '<span class="source-chip ok">● API activa</span>' : '<span class="source-chip manual">⚠ Manual</span>'}
-          </div>
-        </div>
-        <div style="margin-top:10px;font-size:11px;color:var(--text3);line-height:1.6">${idx.descripcion || ''}</div>
-      </div>
-    `
+    html += `<div class="hist-card"><div class="hist-head"><div><div style="font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px"><span class="tag tag-green">${idx.codigo}</span>${idx.nombre}</div><div class="hist-meta">Último: ${valorUltimo ? valorUltimo.toFixed(2) : '—'} ${ultimo ? `(${ultimo})` : ''}</div></div><div>${isApi ? '<span class="source-chip ok">● API activa</span>' : '<span class="source-chip manual">⚠ Manual</span>'}</div></div><div style="margin-top:10px;font-size:11px;color:var(--text3);line-height:1.6">${idx.descripcion || ''}</div></div>`
   })
   
   html += `</div>`
@@ -440,96 +661,32 @@ async function renderIndices() {
 }
 
 async function sincronizarIndices() {
-  toast('Sincronizando desde APIs...', 'success')
-  
-  // IPC via INDEC
+  toast('Sincronizando...', 'success')
   try {
-    const url = 'https://apis.datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26&limit=200&format=json'
-    const r = await fetch(url)
-    const d = await r.json()
-    
-    for (const [fecha, valor] of d.data || []) {
+    const r1 = await fetch('https://apis.datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26&limit=200&format=json')
+    const d1 = await r1.json()
+    for (const [fecha, valor] of d1.data || []) {
       if (valor === null) continue
-      const periodo = fecha.slice(0, 7)
-      
-      await sb.from('indices_valores').upsert({
-        codigo: 'IPC',
-        periodo,
-        valor,
-        fuente_real: 'auto',
-        actualizado_at: new Date().toISOString()
-      })
+      await sb.from('indices_valores').upsert({ codigo: 'IPC', periodo: fecha.slice(0, 7), valor, fuente_real: 'auto', actualizado_at: new Date().toISOString() })
     }
-  } catch (e) {
-    console.error('Error IPC:', e)
-  }
-  
-  // USD via argentinadatos
-  try {
-    const r = await fetch('https://api.argentinadatos.com/v1/cotizaciones/dolares/oficial')
-    const d = await r.json()
-    
-    const agg = {}
-    d.forEach(x => {
-      const k = x.fecha.slice(0, 7)
-      if (!agg[k]) agg[k] = { sum: 0, n: 0 }
-      agg[k].sum += x.venta
-      agg[k].n++
-    })
-    
-    for (const [periodo, data] of Object.entries(agg)) {
-      const valor = data.sum / data.n
-      await sb.from('indices_valores').upsert({
-        codigo: 'USD',
-        periodo,
-        valor,
-        fuente_real: 'auto',
-        actualizado_at: new Date().toISOString()
-      })
-    }
-  } catch (e) {
-    console.error('Error USD:', e)
-  }
+  } catch (e) {}
   
   await loadIndicesValores()
   renderIndices()
   toast('Sincronización completa ✓', 'success')
 }
 
-// ════ PÁGINA ALERTAS ════
 async function renderAlertas() {
-  const { data: alertas } = await sb.from('alertas')
-    .select('*')
-    .eq('org_id', currentOrg.id)
-    .order('created_at', { ascending: false })
-    .limit(50)
+  const { data } = await sb.from('alertas').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).limit(50)
   
-  let html = `
-    <div class="page-head">
-      <div>
-        <div class="page-title">Alertas</div>
-        <div class="page-sub">Notificaciones de variaciones y actualizaciones</div>
-      </div>
-      ${alertas?.some(a => !a.leida) ? `<button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">Marcar todas leídas</button>` : ''}
-    </div>
-    <div class="card">
-  `
+  let html = `<div class="page-head"><div><div class="page-title">Alertas</div><div class="page-sub">Notificaciones</div></div></div><div class="card">`
   
-  if (!alertas || alertas.length === 0) {
-    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin alertas aún</div>`
+  if (!data || data.length === 0) {
+    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin alertas</div>`
   } else {
-    alertas.forEach(a => {
+    data.forEach(a => {
       const fecha = new Date(a.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-      html += `
-        <div class="alerta-item ${a.leida ? '' : 'no-leida'}" onclick="marcarLeida('${a.id}')">
-          <div class="alerta-title">${a.titulo}</div>
-          <div class="alerta-msg">${a.mensaje || ''}</div>
-          <div class="alerta-footer">
-            <span>${fecha}</span>
-            <span>${a.leida ? 'Leída' : 'Nueva'}</span>
-          </div>
-        </div>
-      `
+      html += `<div class="alerta-item ${a.leida ? '' : 'no-leida'}" onclick="marcarLeida('${a.id}')"><div class="alerta-title">${a.titulo}</div><div class="alerta-msg">${a.mensaje || ''}</div><div class="alerta-footer"><span>${fecha}</span><span>${a.leida ? 'Leída' : 'Nueva'}</span></div></div>`
     })
   }
   
@@ -543,13 +700,6 @@ async function marcarLeida(id) {
   renderAlertas()
 }
 
-async function marcarTodasLeidas() {
-  await sb.from('alertas').update({ leida: true }).eq('org_id', currentOrg.id).eq('leida', false)
-  await checkAlertas()
-  renderAlertas()
-  toast('Todas las alertas marcadas como leídas', 'success')
-}
-
 // ════ UTILS ════
 function toast(msg, type = 'success') {
   const c = document.createElement('div')
@@ -559,4 +709,51 @@ function toast(msg, type = 'success') {
   c.innerHTML = `<span style="color:${color};font-size:14px">${icon}</span> ${msg}`
   document.body.appendChild(c)
   setTimeout(() => { c.style.animation = 'toastIn .2s reverse'; setTimeout(() => c.remove(), 200) }, 2400)
-}
+}-- ════════════════════════════════════════════════════════════
+-- POLICALC FASE 4 — SQL CORREGIDO
+-- Pegá esto en SQL Editor de Supabase y ejecutá con Run
+-- ════════════════════════════════════════════════════════════
+
+-- Tabla de contratos
+CREATE TABLE IF NOT EXISTS contratos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizaciones(id) ON DELETE CASCADE,
+  formula_id UUID REFERENCES formulas(id),
+  nombre TEXT NOT NULL,
+  empresa TEXT,
+  mes_inicio TEXT NOT NULL,
+  mes_fin TEXT NOT NULL,
+  monto_base NUMERIC NOT NULL,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabla de ediciones manuales de celdas
+CREATE TABLE IF NOT EXISTS matriz_overrides (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contrato_id UUID REFERENCES contratos(id) ON DELETE CASCADE,
+  org_id UUID REFERENCES organizaciones(id) ON DELETE CASCADE,
+  clave TEXT NOT NULL,
+  valor NUMERIC NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(contrato_id, clave)
+);
+
+-- Row Level Security
+ALTER TABLE contratos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE matriz_overrides ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "org_contratos" ON contratos
+  USING (org_id IN (
+    SELECT org_id FROM usuarios WHERE id = auth.uid()
+  ));
+
+CREATE POLICY "org_overrides" ON matriz_overrides
+  USING (org_id IN (
+    SELECT org_id FROM usuarios WHERE id = auth.uid()
+  ));
+
+-- Índices para búsqueda rápida
+CREATE INDEX IF NOT EXISTS idx_overrides_contrato ON matriz_overrides(contrato_id);
+CREATE INDEX IF NOT EXISTS idx_contratos_org ON contratos(org_id);
