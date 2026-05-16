@@ -275,7 +275,7 @@ function renderMatrizTabla(formula, periodos, montoBase) {
     componentes.forEach(comp => {
       const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
       const v1 = valoresPorIndice[comp.codigo][i]
-      if (!v0 || !v1 || v0 === 0) { valid = false; return }
+      if (!v0 || !v1 || v0 === 0) return
       total += ((v1 - v0) / v0) * 100 * (comp.coef / 100)
     })
     return { val: total, valid }
