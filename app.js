@@ -411,13 +411,151 @@ async function renderHistorial() {
 }
 
 async function renderFormulas() {
-  let html = `<div class="page-head"><div><div class="page-title">Fórmulas</div><div class="page-sub">Polinómicas de tu organización</div></div><button class="btn btn-accent" onclick="toast('Función en desarrollo','warn')">Nueva fórmula</button></div><div class="card">`
-  if (formulas.length === 0) { html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin fórmulas — creá la primera</div>` }
-  else { formulas.forEach(f => {
-    const comps = parseComponentes(f.componentes)
-    html += `<div class="hist-card"><div class="hist-head"><div style="flex:1"><div style="font-size:14px;font-weight:500;margin-bottom:6px">${f.nombre}</div>${f.empresa ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${f.empresa}</div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:5px">${comps.map(c => `<span class="tag ${INDICES_META[c.codigo]?.color || 'tag-blue'}">${c.codigo} ${c.coef}%</span>`).join('')}</div></div></div></div>`
-  }) }
-  html += `</div>`; document.getElementById('page-content').innerHTML = html
+  let html = `
+    <div class="page-head">
+      <div><div class="page-title">Fórmulas</div><div class="page-sub">Polinómicas de tu organización</div></div>
+      <button class="btn btn-accent" onclick="mostrarFormNuevaFormula()">+ Nueva fórmula</button>
+    </div>
+
+    <div id="form-nueva-formula" style="display:none" class="card" style="margin-bottom:16px">
+      <div class="card-title">Nueva fórmula polinómica</div>
+      <div class="grid-2" style="margin-bottom:12px">
+        <div class="input-group" style="margin:0">
+          <label>Nombre de la fórmula</label>
+          <input type="text" id="f-nombre" placeholder="Ej: Fórmula Chevron 2025"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Empresa / Cliente</label>
+          <input type="text" id="f-empresa" placeholder="Ej: Chevron Argentina"/>
+        </div>
+      </div>
+
+      <div class="card-title" style="margin-top:8px">Componentes <span id="f-suma-label" style="font-size:11px;color:var(--text3);font-weight:400">(suma: 0%)</span></div>
+      <div id="f-componentes">
+        <div class="f-comp-row" style="display:grid;grid-template-columns:1fr 120px 36px;gap:8px;margin-bottom:8px">
+          <select class="f-codigo">
+            <option value="IPC">IPC — General INDEC</option>
+            <option value="IPIM">IPIM — INDEC</option>
+            <option value="USD">USD — Dólar BNA</option>
+            <option value="GR3">GR3 — Gasoil YPF</option>
+            <option value="CCT">CCT — Salario Petrolero</option>
+          </select>
+          <input type="number" class="f-coef" placeholder="%" min="1" max="100" oninput="actualizarSuma()"/>
+          <button onclick="this.closest('.f-comp-row').remove();actualizarSuma()" style="background:var(--red-dim,#3a1a1a);color:#ef4444;border:none;border-radius:6px;cursor:pointer;font-size:16px">×</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="agregarComponente()">+ Agregar índice</button>
+        <button class="btn btn-accent btn-sm" onclick="guardarFormula()">Guardar fórmula</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-nueva-formula').style.display='none'">Cancelar</button>
+      </div>
+    </div>
+
+    <div class="card">
+  `
+
+  if (formulas.length === 0) {
+    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin fórmulas — creá la primera</div>`
+  } else {
+    formulas.forEach(f => {
+      const comps = parseComponentes(f.componentes)
+      const suma = comps.reduce((s, c) => s + Number(c.coef), 0)
+      html += `
+        <div class="hist-card">
+          <div class="hist-head">
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:500;margin-bottom:4px">${f.nombre}</div>
+              ${f.empresa ? `<div style="font-size:11px;color:var(--text3);margin-bottom:8px">${f.empresa}</div>` : ''}
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                ${comps.map(c => `<span class="tag ${INDICES_META[c.codigo]?.color || 'tag-blue'}">${c.codigo} ${c.coef}%</span>`).join('')}
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+              <span style="font-size:12px;color:${suma === 100 ? 'var(--green)' : '#ef4444'}">${suma}%</span>
+              <button class="btn btn-ghost btn-sm" style="color:#ef4444;font-size:11px" onclick="eliminarFormula('${f.id}')">Eliminar</button>
+            </div>
+          </div>
+        </div>`
+    })
+  }
+
+  html += `</div>`
+  document.getElementById('page-content').innerHTML = html
+}
+
+function mostrarFormNuevaFormula() {
+  const form = document.getElementById('form-nueva-formula')
+  form.style.display = form.style.display === 'none' ? 'block' : 'none'
+}
+
+function agregarComponente() {
+  const cont = document.getElementById('f-componentes')
+  const div = document.createElement('div')
+  div.className = 'f-comp-row'
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 120px 36px;gap:8px;margin-bottom:8px'
+  div.innerHTML = `
+    <select class="f-codigo">
+      <option value="IPC">IPC — General INDEC</option>
+      <option value="IPIM">IPIM — INDEC</option>
+      <option value="USD">USD — Dólar BNA</option>
+      <option value="GR3">GR3 — Gasoil YPF</option>
+      <option value="CCT">CCT — Salario Petrolero</option>
+    </select>
+    <input type="number" class="f-coef" placeholder="%" min="1" max="100" oninput="actualizarSuma()"/>
+    <button onclick="this.closest('.f-comp-row').remove();actualizarSuma()" style="background:var(--red-dim,#3a1a1a);color:#ef4444;border:none;border-radius:6px;cursor:pointer;font-size:16px">×</button>
+  `
+  cont.appendChild(div)
+}
+
+function actualizarSuma() {
+  const coefs = Array.from(document.querySelectorAll('.f-coef')).map(i => parseFloat(i.value) || 0)
+  const suma = coefs.reduce((s, v) => s + v, 0)
+  const label = document.getElementById('f-suma-label')
+  if (label) {
+    label.textContent = `(suma: ${suma}%)`
+    label.style.color = suma === 100 ? 'var(--green)' : suma > 100 ? '#ef4444' : 'var(--text3)'
+  }
+}
+
+async function guardarFormula() {
+  const nombre = document.getElementById('f-nombre').value.trim()
+  const empresa = document.getElementById('f-empresa').value.trim()
+
+  if (!nombre) { toast('Poné un nombre a la fórmula', 'warn'); return }
+
+  const filas = document.querySelectorAll('.f-comp-row')
+  const componentes = []
+  let suma = 0
+
+  filas.forEach(fila => {
+    const codigo = fila.querySelector('.f-codigo').value
+    const coef = parseFloat(fila.querySelector('.f-coef').value)
+    if (!isNaN(coef) && coef > 0) { componentes.push({ codigo, coef }); suma += coef }
+  })
+
+  if (componentes.length === 0) { toast('Agregá al menos un componente', 'warn'); return }
+  if (suma !== 100) { toast(`La suma debe ser 100% — ahora es ${suma}%`, 'warn'); return }
+
+  const { error } = await sb.from('formulas').insert({
+    org_id: currentOrg.id,
+    nombre, empresa,
+    componentes: componentes
+  })
+
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+
+  toast('Fórmula guardada ✓', 'success')
+  await loadFormulas()
+  renderFormulas()
+}
+
+async function eliminarFormula(id) {
+  if (!confirm('¿Eliminar esta fórmula? No se puede deshacer.')) return
+  const { error } = await sb.from('formulas').delete().eq('id', id)
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  toast('Fórmula eliminada', 'success')
+  await loadFormulas()
+  renderFormulas()
 }
 
 async function renderIndices() {
