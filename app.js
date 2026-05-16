@@ -422,15 +422,110 @@ async function renderFormulas() {
 
 async function renderIndices() {
   const { data: catalogo } = await sb.from('indices_catalogo').select('*')
-  let html = `<div class="page-head"><div><div class="page-title">Índices</div><div class="page-sub">Estado de fuentes</div></div><button class="btn btn-ghost" onclick="sincronizarIndices()">Sincronizar</button></div><div class="card">`
-  catalogo?.forEach(idx => {
-    const valores = indicesValores[idx.codigo] || {}
+  const hoy = new Date()
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
+
+  let html = `
+    <div class="page-head">
+      <div><div class="page-title">Índices</div><div class="page-sub">Estado de fuentes y carga manual</div></div>
+      <button class="btn btn-ghost" onclick="sincronizarIndices()">↻ Sincronizar API</button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Cargar valor manual</div>
+      <div class="grid-4" style="align-items:flex-end">
+        <div class="input-group" style="margin:0">
+          <label>Índice</label>
+          <select id="m-codigo">
+            <option value="GR3">GR3 — Gasoil YPF</option>
+            <option value="CCT">CCT — Salario Petrolero</option>
+            <option value="IPIM">IPIM — INDEC</option>
+            <option value="IPC">IPC — INDEC</option>
+            <option value="USD">USD — Dólar BNA</option>
+          </select>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Período (año-mes)</label>
+          <input type="month" id="m-periodo" value="${mesActual}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Valor del índice</label>
+          <input type="number" id="m-valor" placeholder="Ej: 1450.50" step="0.01"/>
+        </div>
+        <button class="btn btn-accent" onclick="guardarIndiceManual()">Guardar</button>
+      </div>
+      <p style="font-size:11px;color:var(--text3);margin-top:10px">
+        El valor que cargues reemplaza cualquier dato anterior para ese índice y período. Queda guardado como fuente oficial.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Estado de índices</div>
+  `
+
+  const codigos = catalogo?.map(c => c.codigo) || ['IPC','USD','GR3','CCT','IPIM']
+  const todosLosCodigos = [...new Set([...codigos, ...Object.keys(indicesValores)])]
+
+  todosLosCodigos.forEach(codigo => {
+    const meta = catalogo?.find(c => c.codigo === codigo)
+    const valores = indicesValores[codigo] || {}
     const periodos = Object.keys(valores).sort().reverse()
-    const ultimo = periodos[0]; const valorUltimo = ultimo ? valores[ultimo].valor : null
-    const isApi = idx.fuente.startsWith('api')
-    html += `<div class="hist-card"><div class="hist-head"><div><div style="font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px"><span class="tag tag-green">${idx.codigo}</span>${idx.nombre}</div><div class="hist-meta">Último: ${valorUltimo ? valorUltimo.toFixed(2) : '—'} ${ultimo ? `(${ultimo})` : ''}</div></div><div>${isApi ? '<span class="source-chip ok">● API activa</span>' : '<span class="source-chip manual">⚠ Manual</span>'}</div></div><div style="margin-top:10px;font-size:11px;color:var(--text3);line-height:1.6">${idx.descripcion || ''}</div></div>`
+    const ultimo = periodos[0]
+    const valorUltimo = ultimo ? valores[ultimo].valor : null
+    const ultimosMeses = periodos.slice(0, 6)
+
+    html += `
+      <div class="hist-card">
+        <div class="hist-head">
+          <div>
+            <div style="font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px">
+              <span class="tag tag-green">${codigo}</span>
+              ${meta?.nombre || codigo}
+            </div>
+            <div class="hist-meta">Último: <strong>${valorUltimo ? valorUltimo.toLocaleString('es-AR', {maximumFractionDigits:2}) : '—'}</strong> ${ultimo ? `(${ultimo})` : ''}</div>
+          </div>
+          <div style="text-align:right">
+            <span class="source-chip ${valorUltimo ? 'ok' : 'manual'}">${valorUltimo ? '● Con datos' : '⚠ Sin datos'}</span>
+          </div>
+        </div>
+        ${ultimosMeses.length > 0 ? `
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          ${ultimosMeses.map(p => `
+            <div style="font-size:11px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;text-align:center">
+              <div style="color:var(--text3)">${p}</div>
+              <div style="font-weight:500">${valores[p].valor.toLocaleString('es-AR', {maximumFractionDigits:1})}</div>
+            </div>
+          `).join('')}
+        </div>` : ''}
+      </div>`
   })
-  html += `</div>`; document.getElementById('page-content').innerHTML = html
+
+  html += `</div>`
+  document.getElementById('page-content').innerHTML = html
+}
+
+async function guardarIndiceManual() {
+  const codigo = document.getElementById('m-codigo').value
+  const periodo = document.getElementById('m-periodo').value
+  const valor = parseFloat(document.getElementById('m-valor').value)
+
+  if (!codigo || !periodo || isNaN(valor)) {
+    toast('Completá todos los campos', 'warn'); return
+  }
+
+  const { error } = await sb.from('indices_valores').upsert({
+    codigo, periodo, valor,
+    fuente_real: 'manual',
+    org_id: currentOrg.id,
+    actualizado_at: new Date().toISOString()
+  }, { onConflict: 'codigo,periodo' })
+
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+
+  document.getElementById('m-valor').value = ''
+  await loadIndicesValores()
+  renderIndices()
+  toast(`${codigo} ${periodo} guardado ✓`, 'success')
 }
 
 async function sincronizarIndices() {
