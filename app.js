@@ -1456,6 +1456,20 @@ async function renderContratos() {
     .eq('org_id', currentOrg.id)
     .order('created_at', { ascending: false })
 
+  // KPIs
+  const hoy = new Date()
+  const en30 = new Date(hoy.getTime() + 30*24*60*60*1000)
+  let activos = 0, vencidos = 0, porVencer = 0, totalMonto = 0
+
+  listaContratos?.forEach(c => {
+    const hasta = c.vigencia_hasta ? new Date(c.vigencia_hasta) : null
+    if (!hasta) { activos++; return }
+    if (hasta < hoy) vencidos++
+    else if (hasta <= en30) porVencer++
+    else activos++
+    totalMonto += Number(c.monto_base || 0)
+  })
+
   let html = `
     <div class="page-head">
       <div>
@@ -1464,6 +1478,49 @@ async function renderContratos() {
       </div>
       <button class="btn btn-accent" onclick="abrirNuevoContrato()">+ Nuevo contrato</button>
     </div>
+
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="card" style="padding:16px;text-align:center;border-color:rgba(74,222,128,0.2)">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">✅ Activos</div>
+        <div style="font-size:32px;font-weight:800;color:#4ade80">${activos}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center;border-color:${porVencer>0?'rgba(245,158,11,0.3)':'var(--border)'}">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">⏰ Por vencer</div>
+        <div style="font-size:32px;font-weight:800;color:${porVencer>0?'#f59e0b':'var(--text3)'}">${porVencer}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center;border-color:${vencidos>0?'rgba(239,68,68,0.3)':'var(--border)'}">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">❌ Vencidos</div>
+        <div style="font-size:32px;font-weight:800;color:${vencidos>0?'#ef4444':'var(--text3)'}">${vencidos}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">💰 Monto total</div>
+        <div style="font-size:20px;font-weight:800;color:var(--accent)">$${totalMonto.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+      </div>
+    </div>
+
+    <!-- Filtros y búsqueda -->
+    <div class="card" style="margin-bottom:16px;padding:14px 16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="buscar-contrato" placeholder="🔍 Buscar contrato..." 
+          style="width:220px;padding:7px 12px;font-size:12px" 
+          oninput="filtrarContratos()"/>
+        <select id="filtro-estado" onchange="filtrarContratos()" style="width:140px;font-size:12px;padding:7px">
+          <option value="">Todos los estados</option>
+          <option value="activo">✅ Activo</option>
+          <option value="por-vencer">⏰ Por vencer</option>
+          <option value="vencido">❌ Vencido</option>
+        </select>
+        <select id="filtro-formula" onchange="filtrarContratos()" style="width:160px;font-size:12px;padding:7px">
+          <option value="">Todas las fórmulas</option>
+          ${[...new Set(listaContratos?.map(c => c.formulas?.nombre).filter(Boolean))].map(n => `<option value="${n}">${n}</option>`).join('')}
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="limpiarFiltros()">✕ Limpiar</button>
+      </div>
+    </div>
+
+    <!-- Lista de contratos -->
+    <div id="contratos-lista" style="display:grid;gap:12px">
   `
 
   if (!listaContratos || listaContratos.length === 0) {
@@ -1475,33 +1532,197 @@ async function renderContratos() {
         <button class="btn btn-accent" onclick="abrirNuevoContrato()">+ Crear primer contrato</button>
       </div>`
   } else {
-    html += `<div style="display:grid;gap:12px">`
     listaContratos.forEach(c => {
-      const desde = c.vigencia_desde ? new Date(c.vigencia_desde).toLocaleDateString('es-AR') : '—'
-      const hasta = c.vigencia_hasta ? new Date(c.vigencia_hasta).toLocaleDateString('es-AR') : '—'
+      const desde = c.vigencia_desde ? new Date(c.vigencia_desde) : null
+      const hasta = c.vigencia_hasta ? new Date(c.vigencia_hasta) : null
+      const desdeStr = desde ? desde.toLocaleDateString('es-AR') : '—'
+      const hastaStr = hasta ? hasta.toLocaleDateString('es-AR') : '—'
+
+      // Estado
+      let estado = 'activo'
+      let estadoLabel = '● Activo'
+      let estadoColor = '#4ade80'
+      let estadoBg = 'rgba(74,222,128,0.08)'
+      let diasRestantes = null
+
+      if (hasta) {
+        diasRestantes = Math.ceil((hasta - hoy) / (1000*60*60*24))
+        if (diasRestantes < 0) {
+          estado = 'vencido'; estadoLabel = '● Vencido'; estadoColor = '#ef4444'; estadoBg = 'rgba(239,68,68,0.08)'
+        } else if (diasRestantes <= 30) {
+          estado = 'por-vencer'; estadoLabel = `⏰ Vence en ${diasRestantes}d`; estadoColor = '#f59e0b'; estadoBg = 'rgba(245,158,11,0.08)'
+        }
+      }
+
+      // Progreso de vigencia
+      let progresoPct = 0
+      if (desde && hasta) {
+        const total = hasta - desde
+        const transcurrido = hoy - desde
+        progresoPct = Math.min(100, Math.max(0, (transcurrido / total) * 100))
+      }
+
+      // Tipo de fórmula
+      const tipoFormula = c.formulas?.nombre || 'Sin fórmula'
+      const tipoTag = tipoFormula.toLowerCase().includes('indec') ? 'INDEC' :
+                      tipoFormula !== 'Sin fórmula' ? 'Polinómica' : 'Sin fórmula'
+      const tipoColor = tipoTag === 'INDEC' ? 'tag-blue' : tipoTag === 'Polinómica' ? 'tag-green' : 'tag-amber'
+
       html += `
-        <div class="card" style="padding:20px;cursor:pointer" onclick="abrirContrato('${c.id}')">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
-            <div>
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-                ${c.nro_contrato ? `<span style="font-size:11px;background:var(--card-bg);border:1px solid var(--border);padding:2px 8px;border-radius:99px;color:var(--text3)">${c.nro_contrato}</span>` : ''}
-                <span style="font-size:16px;font-weight:600">${c.nombre}</span>
+        <div class="contrato-card" data-estado="${estado}" data-formula="${tipoFormula}" data-nombre="${c.nombre.toLowerCase()}"
+          style="background:var(--surface);border:1px solid ${estado==='vencido'?'rgba(239,68,68,0.2)':estado==='por-vencer'?'rgba(245,158,11,0.2)':'var(--border)'};
+                 border-radius:var(--radius);padding:20px;transition:all .2s;
+                 background:${estadoBg}">
+
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+            <!-- Info principal -->
+            <div style="flex:1;min-width:200px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+                ${c.nro_contrato ? `<span style="font-size:10px;padding:2px 8px;border-radius:99px;background:var(--surface3);color:var(--text3);border:1px solid var(--border)">${c.nro_contrato}</span>` : ''}
+                <span style="font-size:16px;font-weight:700;letter-spacing:-0.3px">${c.nombre}</span>
+                <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${estadoBg};color:${estadoColor};border:1px solid ${estadoColor}33;font-weight:600">${estadoLabel}</span>
               </div>
-              <div style="font-size:13px;color:var(--text3);margin-bottom:4px">${c.proveedor || ''} ${c.actividad ? '· '+c.actividad : ''}</div>
-              <div style="font-size:12px;color:var(--text3)">Vigencia: ${desde} → ${hasta}</div>
+              <div style="font-size:13px;color:var(--text2);margin-bottom:4px">
+                ${c.proveedor ? `<strong>${c.proveedor}</strong>` : ''} ${c.actividad ? `<span style="color:var(--text3)">· ${c.actividad}</span>` : ''}
+              </div>
+              <div style="font-size:12px;color:var(--text3);margin-bottom:8px">
+                📅 ${desdeStr} → ${hastaStr}
+                ${diasRestantes !== null && diasRestantes >= 0 ? `<span style="color:${estadoColor};margin-left:6px">(${diasRestantes} días restantes)</span>` : ''}
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <span class="tag ${tipoColor}">${tipoTag}</span>
+                ${c.gatillo_activo ? `<span class="tag tag-amber">⚡ Gatillo ${c.gatillo_pct}%</span>` : ''}
+                ${c.gestor ? `<span style="font-size:11px;color:var(--text3)">👤 ${c.gestor}</span>` : ''}
+              </div>
             </div>
+
+            <!-- Montos -->
             <div style="text-align:right">
-              <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${c.formulas?.nombre || 'Sin fórmula'}</div>
-              <div style="font-size:20px;font-weight:700;color:var(--accent)">$${Number(c.monto_base||0).toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
-              ${c.gatillo_activo ? `<div style="font-size:11px;color:var(--amber)">⚡ Gatillo ${c.gatillo_pct}%</div>` : ''}
+              <div style="font-size:11px;color:var(--text3);margin-bottom:2px">Monto base</div>
+              <div style="font-size:22px;font-weight:800;color:var(--accent);letter-spacing:-0.5px">
+                ${c.moneda === 'USD' ? 'USD' : '$'} ${Number(c.monto_base||0).toLocaleString('es-AR',{maximumFractionDigits:0})}
+              </div>
+              <div style="font-size:11px;color:var(--text3);margin-top:4px">${tipoFormula}</div>
             </div>
+          </div>
+
+          <!-- Barra de progreso de vigencia -->
+          ${desde && hasta ? `
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <span style="font-size:10px;color:var(--text3)">Vigencia</span>
+              <span style="font-size:10px;color:${estadoColor}">${Math.round(progresoPct)}% transcurrido</span>
+            </div>
+            <div style="background:var(--surface3);border-radius:99px;height:4px;overflow:hidden">
+              <div style="width:${progresoPct}%;background:${estadoColor};height:100%;border-radius:99px;transition:width .3s"></div>
+            </div>
+          </div>` : ''}
+
+          <!-- Botones de acción -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">
+            <button class="btn btn-ghost btn-sm" onclick="abrirContrato('${c.id}')">✏️ Editar</button>
+            <button class="btn btn-accent btn-sm" onclick="abrirYCalcular('${c.id}')">📊 Calcular</button>
+            <button class="btn btn-ghost btn-sm" onclick="verHistorialContrato('${c.id}','${c.nombre}')">📅 Historial</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportarInformeRapido('${c.id}')">📄 PDF</button>
+            <button class="btn btn-ghost btn-sm" style="color:#ef4444;margin-left:auto" onclick="eliminarContratoCompleto('${c.id}')">🗑</button>
           </div>
         </div>`
     })
-    html += `</div>`
   }
 
+  html += `</div>`
   document.getElementById('page-content').innerHTML = html
+}
+
+function filtrarContratos() {
+  const buscar = document.getElementById('buscar-contrato')?.value.toLowerCase() || ''
+  const estado = document.getElementById('filtro-estado')?.value || ''
+  const formula = document.getElementById('filtro-formula')?.value || ''
+
+  document.querySelectorAll('.contrato-card').forEach(card => {
+    const nombre = card.dataset.nombre || ''
+    const cardEstado = card.dataset.estado || ''
+    const cardFormula = card.dataset.formula || ''
+
+    const matchBuscar = !buscar || nombre.includes(buscar)
+    const matchEstado = !estado || cardEstado === estado
+    const matchFormula = !formula || cardFormula === formula
+
+    card.style.display = matchBuscar && matchEstado && matchFormula ? 'block' : 'none'
+  })
+}
+
+function limpiarFiltros() {
+  const b = document.getElementById('buscar-contrato')
+  const e = document.getElementById('filtro-estado')
+  const f = document.getElementById('filtro-formula')
+  if (b) b.value = ''
+  if (e) e.value = ''
+  if (f) f.value = ''
+  filtrarContratos()
+}
+
+async function abrirYCalcular(id) {
+  await abrirContrato(id)
+  setTimeout(() => calcularContratoCompleto(), 400)
+}
+
+async function verHistorialContrato(id, nombre) {
+  const { data } = await sb.from('calculos_mensuales').select('*')
+    .eq('org_id', currentOrg.id)
+    .eq('contrato_id', id)
+    .order('created_at', { ascending: false })
+
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center'
+
+  let filas = ''
+  if (!data || data.length === 0) {
+    filas = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--text3)">Sin historial para este contrato</td></tr>'
+  } else {
+    data.forEach(h => {
+      const fecha = new Date(h.created_at).toLocaleDateString('es-AR')
+      const color = h.ajuste_acumulado >= 0 ? '#4ade80' : '#ef4444'
+      filas += `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 14px">${fecha}</td>
+        <td style="padding:10px 14px">$${Number(h.monto_inicial).toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+        <td style="padding:10px 14px;color:#4ade80;font-weight:600">$${Number(h.monto_final).toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+        <td style="padding:10px 14px;font-weight:700;color:${color}">${h.ajuste_acumulado>=0?'+':''}${Number(h.ajuste_acumulado).toFixed(2)}%</td>
+      </tr>`
+    })
+  }
+
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:580px;border:1px solid var(--border);max-height:80vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h3 style="font-size:16px;font-weight:600">📅 Historial — ${nombre}</h3>
+        <button onclick="document.getElementById('modal-overlay').remove()" class="btn btn-ghost btn-sm">✕ Cerrar</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--surface2)">
+          <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text3)">Fecha</th>
+          <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text3)">Monto inicial</th>
+          <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text3)">Monto final</th>
+          <th style="padding:8px 14px;text-align:left;font-size:11px;color:var(--text3)">Ajuste</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function exportarInformeRapido(id) {
+  const { data: c } = await sb.from('contratos').select('*, formulas(nombre,componentes)').eq('id', id).single()
+  if (!c) return
+  contratoEditando = c
+  const { data: items } = await sb.from('contrato_items').select('*').eq('contrato_id', id).order('orden')
+  itemsContratoActual = items || []
+  await calcularContratoCompleto()
+  setTimeout(() => {
+    if (window._contratoCalculo) exportarInformeContrato()
+  }, 500)
 }
 
 function abrirNuevoContrato() {
