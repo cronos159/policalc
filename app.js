@@ -835,19 +835,247 @@ async function sincronizarIndices() {
 }
 
 async function renderAlertas() {
-  const { data } = await sb.from('alertas').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).limit(50)
-  let html = `<div class="page-head"><div><div class="page-title">Alertas</div><div class="page-sub">Notificaciones</div></div></div><div class="card">`
-  if (!data || data.length === 0) { html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin alertas</div>` }
-  else { data.forEach(a => {
-    const fecha = new Date(a.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-    html += `<div class="alerta-item ${a.leida ? '' : 'no-leida'}" onclick="marcarLeida('${a.id}')"><div class="alerta-title">${a.titulo}</div><div class="alerta-msg">${a.mensaje || ''}</div><div class="alerta-footer"><span>${fecha}</span><span>${a.leida ? 'Leída' : 'Nueva'}</span></div></div>`
-  }) }
-  html += `</div>`; document.getElementById('page-content').innerHTML = html
+  // Generar alertas automáticas primero
+  await generarAlertasAutomaticas()
+
+  const { data } = await sb.from('alertas').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).limit(100)
+
+  const total = data?.length || 0
+  const noLeidas = data?.filter(a => !a.leida).length || 0
+  const altas = data?.filter(a => a.prioridad === 'alta' && !a.leida).length || 0
+
+  const PRIORIDAD_CONFIG = {
+    alta:  { color: '#ef4444', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.25)',  icon: '🔴', label: 'Alta'  },
+    media: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', icon: '🟡', label: 'Media' },
+    baja:  { color: '#4ade80', bg: 'rgba(74,222,128,0.08)', border: 'rgba(74,222,128,0.25)', icon: '🟢', label: 'Baja'  },
+  }
+
+  const TIPO_ICON = {
+    'variacion-alta':      '📈',
+    'contrato-vencido':    '📋',
+    'contrato-por-vencer': '⏰',
+    'indice-faltante':     '📊',
+    'formula-incompleta':  '⚠️',
+    'sin-actualizacion':   '🔄',
+    'scraper-error':       '🤖',
+    'certificacion':       '📅',
+    'default':             '🔔',
+  }
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Alertas</div>
+        <div class="page-sub">Centro de notificaciones y alertas automáticas</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">✓ Marcar todas leídas</button>
+        <button class="btn btn-ghost btn-sm" onclick="renderAlertas()">↻ Actualizar</button>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+      <div class="card" style="padding:16px;text-align:center;border-color:${altas > 0 ? 'rgba(239,68,68,0.3)' : 'var(--border)'}">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">🔴 Alta prioridad</div>
+        <div style="font-size:36px;font-weight:800;color:${altas > 0 ? '#ef4444' : 'var(--text3)'}">${altas}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">🔔 Sin leer</div>
+        <div style="font-size:36px;font-weight:800;color:${noLeidas > 0 ? 'var(--accent)' : 'var(--text3)'}">${noLeidas}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">📋 Total</div>
+        <div style="font-size:36px;font-weight:800;color:var(--text2)">${total}</div>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card" style="margin-bottom:16px;padding:14px 16px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Filtrar:</span>
+        <button class="btn btn-sm filter-btn active-filter" onclick="filtrarAlertas('todas',this)">Todas</button>
+        <button class="btn btn-sm filter-btn" onclick="filtrarAlertas('alta',this)">🔴 Alta</button>
+        <button class="btn btn-sm filter-btn" onclick="filtrarAlertas('media',this)">🟡 Media</button>
+        <button class="btn btn-sm filter-btn" onclick="filtrarAlertas('baja',this)">🟢 Baja</button>
+        <button class="btn btn-sm filter-btn" onclick="filtrarAlertas('no-leidas',this)">🔔 No leídas</button>
+      </div>
+    </div>
+
+    <div id="alertas-lista">
+  `
+
+  if (!data || data.length === 0) {
+    html += `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="font-size:40px;margin-bottom:12px">✅</div>
+        <div style="font-size:16px;font-weight:500;margin-bottom:8px">Todo en orden</div>
+        <div style="color:var(--text3);font-size:13px">No hay alertas pendientes. El sistema está funcionando correctamente.</div>
+      </div>`
+  } else {
+    data.forEach(a => {
+      const fecha = new Date(a.created_at).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+      const prio = a.prioridad || 'baja'
+      const cfg = PRIORIDAD_CONFIG[prio] || PRIORIDAD_CONFIG.baja
+      const icon = TIPO_ICON[a.tipo] || TIPO_ICON.default
+      const leida = a.leida
+
+      html += `
+        <div class="alerta-item-v2 ${leida ? 'leida' : ''}" data-prioridad="${prio}"
+          style="background:${leida ? 'var(--surface2)' : cfg.bg};border:1px solid ${leida ? 'var(--border)' : cfg.border};
+                 border-radius:var(--radius);padding:16px 18px;margin-bottom:10px;transition:all .2s;
+                 ${leida ? 'opacity:0.6' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                <span style="font-size:16px">${icon}</span>
+                <span style="font-size:14px;font-weight:${leida ? '400' : '600'};color:${leida ? 'var(--text2)' : 'var(--text)'}">${a.titulo}</span>
+                <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.border};font-weight:600;text-transform:uppercase">${cfg.label}</span>
+                ${!leida ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0"></span>' : ''}
+              </div>
+              ${a.mensaje ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5">${a.mensaje}</div>` : ''}
+              ${a.accion_recomendada ? `
+                <div style="font-size:12px;color:var(--text3);background:var(--surface3);padding:6px 10px;border-radius:6px;border-left:2px solid ${cfg.color}">
+                  💡 ${a.accion_recomendada}
+                </div>` : ''}
+              <div style="font-size:11px;color:var(--text3);margin-top:8px">📅 ${fecha}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+              ${!leida ? `<button onclick="marcarLeida('${a.id}')" class="btn btn-ghost btn-sm" style="font-size:11px">✓ Resolver</button>` : '<span style="font-size:11px;color:var(--text3)">✓ Resuelta</span>'}
+              ${a.contrato_id ? `<button onclick="verContratoDesdeAlerta('${a.contrato_id}')" class="btn btn-ghost btn-sm" style="font-size:11px">Ver contrato</button>` : ''}
+              <button onclick="borrarAlerta('${a.id}')" class="btn btn-ghost btn-sm" style="font-size:11px;color:#ef4444">🗑</button>
+            </div>
+          </div>
+        </div>`
+    })
+  }
+
+  html += `</div>`
+  document.getElementById('page-content').innerHTML = html
+
+  // Aplicar estilos a botones de filtro
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.style.cssText = 'background:var(--surface2);border:1px solid var(--border);color:var(--text2)'
+  })
+  const activeBtn = document.querySelector('.active-filter')
+  if (activeBtn) activeBtn.style.cssText = 'background:var(--accent);color:#0a0a0a;border:none'
+}
+
+async function generarAlertasAutomaticas() {
+  try {
+    const ahora = new Date()
+    const hoy = ahora.toISOString().slice(0, 10)
+    const en30dias = new Date(ahora.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const mesActual = ahora.toISOString().slice(0, 7)
+
+    // Cargar contratos
+    const { data: contratosData } = await sb.from('contratos').select('*').eq('org_id', currentOrg.id)
+
+    for (const c of contratosData || []) {
+      // Contrato vencido
+      if (c.vigencia_hasta && c.vigencia_hasta < hoy) {
+        await crearAlertaAuto({
+          tipo: 'contrato-vencido',
+          titulo: `Contrato vencido: ${c.nombre}`,
+          mensaje: `El contrato venció el ${new Date(c.vigencia_hasta).toLocaleDateString('es-AR')}. Revisá si necesita renovación.`,
+          prioridad: 'alta',
+          contrato_id: c.id,
+          accion_recomendada: 'Contactar al cliente para renovar o cerrar el contrato'
+        })
+      }
+      // Por vencer en 30 días
+      else if (c.vigencia_hasta && c.vigencia_hasta <= en30dias && c.vigencia_hasta >= hoy) {
+        await crearAlertaAuto({
+          tipo: 'contrato-por-vencer',
+          titulo: `Contrato por vencer: ${c.nombre}`,
+          mensaje: `Vence el ${new Date(c.vigencia_hasta).toLocaleDateString('es-AR')}. Quedan menos de 30 días.`,
+          prioridad: 'media',
+          contrato_id: c.id,
+          accion_recomendada: 'Iniciar gestión de renovación con el cliente'
+        })
+      }
+    }
+
+    // Índices faltantes del mes actual
+    const indicesRequeridos = ['IPC', 'USD', 'GR3']
+    for (const codigo of indicesRequeridos) {
+      const tiene = indicesValores[codigo]?.[mesActual]
+      if (!tiene) {
+        await crearAlertaAuto({
+          tipo: 'indice-faltante',
+          titulo: `Índice ${codigo} sin datos para ${mesActual}`,
+          mensaje: `No hay valor cargado para ${codigo} en el período ${mesActual}. Los cálculos del mes pueden estar incompletos.`,
+          prioridad: 'media',
+          accion_recomendada: `Cargar el valor de ${codigo} en la sección Índices`
+        })
+      }
+    }
+
+  } catch (e) {
+    console.error('Error generando alertas automáticas:', e)
+  }
+}
+
+async function crearAlertaAuto({ tipo, titulo, mensaje, prioridad, contrato_id, accion_recomendada }) {
+  // Solo crear si no existe una igual no resuelta
+  const { data: existe } = await sb.from('alertas')
+    .select('id')
+    .eq('org_id', currentOrg.id)
+    .eq('tipo', tipo)
+    .eq('titulo', titulo)
+    .eq('leida', false)
+    .limit(1)
+
+  if (existe && existe.length > 0) return
+
+  await sb.from('alertas').insert({
+    org_id: currentOrg.id,
+    tipo, titulo, mensaje,
+    prioridad: prioridad || 'baja',
+    contrato_id: contrato_id || null,
+    accion_recomendada: accion_recomendada || null,
+    leida: false
+  })
+}
+
+function filtrarAlertas(filtro, btn) {
+  // Actualizar estilos de botones
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.style.cssText = 'background:var(--surface2);border:1px solid var(--border);color:var(--text2)'
+  })
+  btn.style.cssText = 'background:var(--accent);color:#0a0a0a;border:none'
+
+  const items = document.querySelectorAll('.alerta-item-v2')
+  items.forEach(item => {
+    const prio = item.dataset.prioridad
+    const esLeida = item.classList.contains('leida')
+    if (filtro === 'todas') item.style.display = 'block'
+    else if (filtro === 'no-leidas') item.style.display = esLeida ? 'none' : 'block'
+    else item.style.display = prio === filtro ? 'block' : 'none'
+  })
 }
 
 async function marcarLeida(id) {
   await sb.from('alertas').update({ leida: true }).eq('id', id)
-  await checkAlertas(); renderAlertas()
+  await checkAlertas()
+  renderAlertas()
+}
+
+async function marcarTodasLeidas() {
+  await sb.from('alertas').update({ leida: true }).eq('org_id', currentOrg.id).eq('leida', false)
+  await checkAlertas()
+  renderAlertas()
+  toast('Todas las alertas marcadas como leídas ✓', 'success')
+}
+
+async function borrarAlerta(id) {
+  await sb.from('alertas').delete().eq('id', id)
+  renderAlertas()
+}
+
+async function verContratoDesdeAlerta(contratoId) {
+  goPage('contratos')
+  setTimeout(() => abrirContrato(contratoId), 300)
 }
 
 function toast(msg, type = 'success') {
