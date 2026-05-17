@@ -197,61 +197,97 @@ function parseComponentes(c) {
 function renderMatriz() {
   let html = `
     <div class="page-head">
-      <div><div class="page-title">Matriz de actualización</div><div class="page-sub">Cálculo mensual con fórmula polinómica</div></div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="generarInforme()" style="margin-right:4px">📄 PDF</button><button class="btn btn-ghost" onclick="exportarExcel()">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2,10 L2,13 C2,13.5 2.5,14 3,14 L13,14 C13.5,14 14,13.5 14,13 L14,10"/><polyline points="5,6 8,2 11,6"/><line x1="8" y1="2" x2="8" y2="11"/></svg>
-          Exportar
-        </button>
-        <button class="btn btn-accent" onclick="guardarCalculo()">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13,2 13,14 8,11 3,14 3,2"/></svg>
-          Guardar
-        </button>
+      <div>
+        <div class="page-title">Matriz de actualización</div>
+        <div class="page-sub">Cálculo mensual con fórmula polinómica</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="generarInforme()">📄 PDF</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportarExcel()">↓ Excel</button>
+        <button class="btn btn-accent btn-sm" onclick="guardarCalculo()">💾 Guardar</button>
       </div>
     </div>
-    <div class="card">
-      <div class="card-title">Contrato</div>
-      <div class="grid-4">
-        <div class="input-group" style="margin:0">
-          <label>Seleccionar contrato</label>
-          <select id="contrato-select" onchange="cargarContrato(this.value)">
-            <option value="">-- Nuevo contrato --</option>
-            ${contratos.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
-          </select>
-        </div>
-        <div class="input-group" style="margin:0">
-          <label>Nombre</label>
-          <input type="text" id="contrato-nombre" placeholder="Ej: Chevron 2024-2026" value="${contratoActual?.nombre || ''}"/>
-        </div>
-        <div class="input-group" style="margin:0">
-          <label>Fórmula</label>
-          <select id="contrato-formula">
-            ${formulas.map(f => `<option value="${f.id}" ${contratoActual?.formula_id === f.id ? 'selected' : ''}>${f.nombre}</option>`).join('')}
-          </select>
-        </div>
-        <div class="input-group" style="margin:0">
-          <label>Monto base ($)</label>
-          <input type="number" id="contrato-monto" value="${contratoActual?.monto_base || 1000000}" step="0.01"/>
-        </div>
+
+    <!-- Panel de configuración colapsable -->
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleConfigMatriz()">
+        <div class="card-title" style="margin:0">⚙️ Configuración del cálculo</div>
+        <span id="config-toggle-icon" style="color:var(--text3);font-size:12px">▼</span>
       </div>
-      <div class="grid-2" style="margin-top:12px">
-        <div class="input-group" style="margin:0">
-          <label>Período desde</label>
-          <div style="display:flex;gap:6px">
-            <select id="mes-desde"></select>
-            <input type="number" id="anio-desde" value="2024" min="2020" max="2030" style="width:80px"/>
+      <div id="config-matriz" style="margin-top:14px">
+        <div class="grid-4" style="margin-bottom:12px">
+          <div class="input-group" style="margin:0">
+            <label>Contrato guardado</label>
+            <select id="contrato-select" onchange="cargarContrato(this.value)">
+              <option value="">-- Nuevo / sin guardar --</option>
+              ${contratos.map(c => `<option value="${c.id}" ${contratoActual?.id === c.id ? 'selected' : ''}>${c.nombre}</option>`).join('')}
+            </select>
+          </div>
+          <div class="input-group" style="margin:0">
+            <label>Nombre del cálculo</label>
+            <input type="text" id="contrato-nombre" placeholder="Ej: Chevron 2024-2026" value="${contratoActual?.nombre || ''}"/>
+          </div>
+          <div class="input-group" style="margin:0">
+            <label>Fórmula polinómica</label>
+            <select id="contrato-formula">
+              ${formulas.map(f => `<option value="${f.id}" ${contratoActual?.formula_id === f.id ? 'selected' : ''}>${f.nombre}</option>`).join('')}
+            </select>
+          </div>
+          <div class="input-group" style="margin:0">
+            <label>Monto base ($)</label>
+            <input type="number" id="contrato-monto" value="${contratoActual?.monto_base || 1000000}" step="0.01"/>
           </div>
         </div>
-        <div class="input-group" style="margin:0">
-          <label>Período hasta</label>
-          <div style="display:flex;gap:6px">
-            <select id="mes-hasta"></select>
-            <input type="number" id="anio-hasta" value="2026" min="2020" max="2030" style="width:80px"/>
+        <div class="grid-2">
+          <div class="input-group" style="margin:0">
+            <label>Período desde</label>
+            <div style="display:flex;gap:6px">
+              <select id="mes-desde" style="flex:1"></select>
+              <input type="number" id="anio-desde" value="2024" min="2020" max="2030" style="width:80px"/>
+            </div>
+          </div>
+          <div class="input-group" style="margin:0">
+            <label>Período hasta</label>
+            <div style="display:flex;gap:6px">
+              <select id="mes-hasta" style="flex:1"></select>
+              <input type="number" id="anio-hasta" value="2026" min="2020" max="2030" style="width:80px"/>
+            </div>
           </div>
         </div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn btn-accent" onclick="calcularMatriz()">📊 Calcular matriz</button>
+          <button class="btn btn-ghost btn-sm" onclick="guardarContrato()">💾 Guardar contrato</button>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-accent btn-sm" onclick="calcularMatriz()">Calcular matriz</button><button class="btn btn-ghost btn-sm" onclick="guardarContrato()">💾 Guardar contrato</button></div>
     </div>
+
+    <!-- Resumen ejecutivo — se llena al calcular -->
+    <div id="resumen-ejecutivo" style="display:none;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        <div class="card" style="padding:16px;border-color:rgba(232,255,71,0.2)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Monto base</div>
+          <div id="kpi-monto-base" style="font-size:20px;font-weight:800;color:var(--text)">—</div>
+        </div>
+        <div class="card" style="padding:16px;border-color:rgba(74,222,128,0.2)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Monto actualizado</div>
+          <div id="kpi-monto-act" style="font-size:20px;font-weight:800;color:#4ade80">—</div>
+        </div>
+        <div class="card" style="padding:16px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Variación acumulada</div>
+          <div id="kpi-var-acum" style="font-size:24px;font-weight:800">—</div>
+        </div>
+        <div class="card" style="padding:16px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Período</div>
+          <div id="kpi-periodo" style="font-size:13px;font-weight:600;color:var(--text2);margin-top:4px">—</div>
+          <div id="kpi-meses" style="font-size:11px;color:var(--text3);margin-top:2px">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla de índices con estado -->
+    <div id="indices-estado-matriz" style="display:none;margin-bottom:16px"></div>
+
+    <!-- Resultado de la tabla -->
     <div id="matriz-resultado"></div>
   `
   document.getElementById('page-content').innerHTML = html
@@ -262,6 +298,14 @@ function renderMatriz() {
   document.getElementById('mes-desde').value = 8
   document.getElementById('mes-hasta').value = 2
   if (contratoActual) calcularMatriz()
+}
+
+function toggleConfigMatriz() {
+  const el = document.getElementById('config-matriz')
+  const icon = document.getElementById('config-toggle-icon')
+  const visible = el.style.display !== 'none'
+  el.style.display = visible ? 'none' : 'block'
+  icon.textContent = visible ? '▶' : '▼'
 }
 
 async function cargarContrato(id) {
@@ -294,44 +338,104 @@ function renderMatrizTabla(formula, periodos, montoBase) {
   const valoresPorIndice = {}
   const pkPrev = getPeriodoPrevio(periodos[0])
   componentes.forEach(comp => { valoresPorIndice[comp.codigo] = periodos.map(p => getValue(comp.codigo, p.key)) })
+
   const totalesMensuales = periodos.map((p, i) => {
-    let total = 0, valid = true
+    let total = 0, tieneDatos = false, faltanDatos = []
     componentes.forEach(comp => {
       const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
       const v1 = valoresPorIndice[comp.codigo][i]
-      if (!v0 || !v1 || v0 === 0) return
+      if (!v0 || !v1 || v0 === 0) { faltanDatos.push(comp.codigo); return }
       total += ((v1 - v0) / v0) * 100 * (comp.coef / 100)
+      tieneDatos = true
     })
-    return { val: total, valid }
+    return { val: total, valid: tieneDatos, faltanDatos }
   })
+
   let monto = montoBase
   const montos = [monto]
   totalesMensuales.forEach(t => { if (t.valid) monto = monto * (1 + t.val / 100); montos.push(monto) })
+
+  // Calcular acumulado final
+  let acumFinal = 0
+  totalesMensuales.forEach(t => { if (t.valid) acumFinal = ((1 + acumFinal/100)*(1 + t.val/100)-1)*100 })
+  const montoFinal = montos[montos.length - 1]
+  const positivo = acumFinal >= 0
+
+  // ── Actualizar KPIs del resumen ejecutivo ──
+  const resumen = document.getElementById('resumen-ejecutivo')
+  if (resumen) {
+    resumen.style.display = 'block'
+    document.getElementById('kpi-monto-base').textContent = '$' + montoBase.toLocaleString('es-AR',{maximumFractionDigits:0})
+    document.getElementById('kpi-monto-act').textContent = '$' + montoFinal.toLocaleString('es-AR',{maximumFractionDigits:0})
+    document.getElementById('kpi-monto-act').style.color = positivo ? '#4ade80' : '#ef4444'
+    const kpiVar = document.getElementById('kpi-var-acum')
+    kpiVar.textContent = (positivo?'+':'') + acumFinal.toFixed(2) + '%'
+    kpiVar.style.color = positivo ? '#4ade80' : '#ef4444'
+    document.getElementById('kpi-periodo').textContent = periodos[0].label + ' → ' + periodos[periodos.length-1].label
+    document.getElementById('kpi-meses').textContent = periodos.length + ' meses analizados'
+  }
+
+  // ── Estado de índices ──
+  const indicesEl = document.getElementById('indices-estado-matriz')
+  if (indicesEl) {
+    indicesEl.style.display = 'block'
+    const chips = componentes.map(comp => {
+      const tieneActual = getValue(comp.codigo, periodos[periodos.length-1].key)
+      const color = tieneActual ? '#4ade80' : '#f59e0b'
+      const estado = tieneActual ? '● OK' : '⚠ Sin dato'
+      return `<div style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--surface2);border:1px solid ${color}33;border-radius:99px;font-size:12px">
+        <span class="tag ${INDICES_META[comp.codigo]?.color||'tag-blue'}" style="font-size:10px">${comp.codigo}</span>
+        <span style="color:var(--text2)">${comp.coef}%</span>
+        <span style="color:${color};font-size:11px">${estado}</span>
+      </div>`
+    }).join('')
+    indicesEl.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)">${chips}</div>`
+  }
+
+  // ── Tabla principal ──
   let html = `
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">Matriz mensual — ${formula.nombre}</div>
+    <div class="card" style="margin-top:4px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">📋 Matriz mensual — ${formula.nombre}</div>
+        <div style="font-size:12px;color:var(--text3)">${periodos.length} períodos · ${componentes.length} índices</div>
+      </div>
       <div class="matrix-wrap">
         <table class="matrix">
           <thead><tr>
             <th class="idx-col">Componente</th>
-            ${periodos.map(p => `<th>${p.label}</th>`).join('')}
+            ${periodos.map(p => {
+              const mesConDatos = componentes.every(c => getValue(c.codigo, p.key) !== null)
+              return `<th style="${mesConDatos?'':'color:var(--amber)'}">${p.label}${mesConDatos?'':' ⚠'}</th>`
+            }).join('')}
             <th class="col-total">Total</th>
           </tr></thead>
           <tbody>
   `
+
   componentes.forEach(comp => {
     const meta = INDICES_META[comp.codigo] || { label: comp.codigo, color: 'tag-blue' }
-    html += `<tr class="row-idx"><td class="idx-col"><span class="tag ${meta.color}">${comp.codigo}</span><span style="color:var(--text3);font-size:10px;margin-left:6px">${comp.coef}%</span></td>`
+    html += `<tr class="row-idx">
+      <td class="idx-col">
+        <span class="tag ${meta.color}">${comp.codigo}</span>
+        <span style="color:var(--text3);font-size:10px;margin-left:6px">${comp.coef}%</span>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">${meta.label}</div>
+      </td>`
     let sumVar = 0
     periodos.forEach((p, i) => {
       const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
       const v1 = valoresPorIndice[comp.codigo][i]
       let varPct = null
       if (v0 && v1 && v0 !== 0) { varPct = ((v1 - v0) / v0) * 100; sumVar += varPct }
-      html += `<td>${varPct != null ? `<span class="${varPct >= 0 ? 'pct-pos' : 'pct-neg'}">${varPct >= 0 ? '+' : ''}${varPct.toFixed(2)}%</span>` : '—'}</td>`
+      const cls = varPct !== null ? (varPct >= 0 ? 'pct-pos' : 'pct-neg') : ''
+      html += `<td title="${v1 ? 'Valor: '+v1.toFixed(2) : 'Sin dato'}">
+        ${varPct != null
+          ? `<span class="${cls}">${varPct >= 0 ? '+' : ''}${varPct.toFixed(2)}%</span>`
+          : '<span style="color:var(--text4)">—</span>'}
+      </td>`
     })
-    html += `<td class="col-total">${sumVar.toFixed(2)}%</td></tr>`
-    html += `<tr class="row-afec"><td class="idx-col" style="padding-left:24px;font-size:11px">↳ Afección</td>`
+    html += `<td class="col-total">${sumVar !== 0 ? (sumVar>=0?'+':'')+sumVar.toFixed(2)+'%' : '—'}</td></tr>`
+
+    html += `<tr class="row-afec"><td class="idx-col" style="padding-left:24px;font-size:11px;color:var(--text3)">↳ Afección ponderada</td>`
     let sumAfec = 0
     periodos.forEach((p, i) => {
       const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i - 1]
@@ -339,23 +443,60 @@ function renderMatrizTabla(formula, periodos, montoBase) {
       let afec = null
       if (v0 && v1 && v0 !== 0) afec = ((v1 - v0) / v0) * 100 * (comp.coef / 100)
       if (afec != null) sumAfec += afec
-      html += `<td>${afec != null ? (afec >= 0 ? '+' : '') + afec.toFixed(2) + '%' : '—'}</td>`
+      html += `<td>${afec != null ? (afec >= 0 ? '+' : '') + afec.toFixed(3) + '%' : '—'}</td>`
     })
-    html += `<td class="col-total">${sumAfec.toFixed(2)}%</td></tr>`
+    html += `<td class="col-total">${sumAfec.toFixed(3)}%</td></tr>`
   })
-  html += `<tr class="row-total"><td class="idx-col">Total ajuste mensual</td>`
+
+  // Fila total
+  html += `<tr class="row-total"><td class="idx-col" style="font-weight:700">TOTAL AJUSTE MENSUAL</td>`
   let acumPct = 0
   totalesMensuales.forEach(t => {
-    html += `<td>${t.valid ? (t.val >= 0 ? '+' : '') + t.val.toFixed(3) + '%' : '—'}</td>`
-    if (t.valid) acumPct = ((1 + acumPct / 100) * (1 + t.val / 100) - 1) * 100
+    const hayDatos = t.valid
+    html += `<td style="${!hayDatos?'color:var(--amber)':''}">${hayDatos ? (t.val >= 0 ? '+' : '') + t.val.toFixed(3) + '%' : '⚠'}</td>`
+    if (hayDatos) acumPct = ((1 + acumPct / 100) * (1 + t.val / 100) - 1) * 100
   })
   html += `<td class="col-total">${acumPct.toFixed(2)}%</td></tr>`
-  html += `<tr class="row-monto"><td class="idx-col">Monto contrato ($)</td>`
-  totalesMensuales.forEach((t, i) => { html += `<td>${montos[i + 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>` })
-  html += `<td class="col-total">${montos[montos.length - 1].toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td></tr>`
-  html += `</tbody></table></div></div>`
+
+  // Fila diferencia $
+  html += `<tr class="row-afec"><td class="idx-col" style="padding-left:24px;font-size:11px">↳ Diferencia mensual ($)</td>`
+  periodos.forEach((p, i) => {
+    const diff = montos[i+1] - montos[i]
+    const color = diff >= 0 ? 'var(--green)' : 'var(--red)'
+    html += `<td style="color:${color};font-size:11px">${diff >= 0 ? '+' : ''}${diff.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>`
+  })
+  html += `<td class="col-total" style="font-size:11px">+${(montoFinal-montoBase).toLocaleString('es-AR',{maximumFractionDigits:0})}</td></tr>`
+
+  // Fila monto
+  html += `<tr class="row-monto"><td class="idx-col" style="font-weight:700">MONTO CONTRATO ($)</td>`
+  totalesMensuales.forEach((t, i) => {
+    html += `<td style="font-weight:${i===totalesMensuales.length-1?'700':'400'}">${montos[i + 1].toLocaleString('es-AR', { maximumFractionDigits: 0 })}</td>`
+  })
+  html += `<td class="col-total">${montoFinal.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</td></tr>`
+
+  html += `</tbody></table></div>
+
+    <!-- Nota de pie -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:11px;color:var(--text3)">
+        ⚠ = mes sin datos completos &nbsp;·&nbsp; Hover sobre celdas para ver valor del índice
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="generarInforme()">📄 Informe PDF</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportarExcel()">↓ Excel</button>
+        <button class="btn btn-accent btn-sm" onclick="guardarCalculo()">💾 Guardar historial</button>
+      </div>
+    </div>
+  </div>`
+
   document.getElementById('matriz-resultado').innerHTML = html
   window._matrizActual = { formula, periodos, montoBase, totalesMensuales, montos, componentes, valoresPorIndice }
+
+  // Colapsar config después de calcular
+  const configEl = document.getElementById('config-matriz')
+  const iconEl = document.getElementById('config-toggle-icon')
+  if (configEl) { configEl.style.display = 'none'; }
+  if (iconEl) iconEl.textContent = '▶'
 }
 
 function getPeriodoPrevio(periodo) {
