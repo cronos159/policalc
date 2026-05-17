@@ -175,7 +175,7 @@ function renderMatriz() {
     <div class="page-head">
       <div><div class="page-title">Matriz de actualización</div><div class="page-sub">Cálculo mensual con fórmula polinómica</div></div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="exportarExcel()">
+        <button class="btn btn-ghost" onclick="generarInforme()" style="margin-right:4px">📄 PDF</button><button class="btn btn-ghost" onclick="exportarExcel()">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2,10 L2,13 C2,13.5 2.5,14 3,14 L13,14 C13.5,14 14,13.5 14,13 L14,10"/><polyline points="5,6 8,2 11,6"/><line x1="8" y1="2" x2="8" y2="11"/></svg>
           Exportar
         </button>
@@ -909,4 +909,152 @@ async function exportarExcel() {
   const filename = `PoliCalc_${nombreContrato.replace(/\s+/g,'_')}_${hoy.replace(/\//g,'-')}.xlsx`
   XLSX.writeFile(wb, filename)
   toast('Excel exportado ✓', 'success')
+}
+
+function generarInforme() {
+  if (!window._matrizActual) { toast('Calculá la matriz primero', 'warn'); return }
+
+  const { formula, periodos, componentes, valoresPorIndice, totalesMensuales, montos } = window._matrizActual
+  const pkPrev = getPeriodoPrevio(periodos[0])
+  const nombreContrato = document.getElementById('contrato-nombre').value || 'Contrato'
+  const hoy = new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'long',year:'numeric'})
+
+  let acumTotal = 0
+  totalesMensuales.forEach(t => { if (t.valid) acumTotal = ((1+acumTotal/100)*(1+t.val/100)-1)*100 })
+  const montoBase = montos[0]
+  const montoFinal = montos[montos.length-1]
+  const diferencia = montoFinal - montoBase
+  const positivo = acumTotal >= 0
+
+  // Calcular afección por componente
+  const afecciones = componentes.map(c => {
+    let sumAfec = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(c.codigo, pkPrev) : valoresPorIndice[c.codigo][i-1]
+      const v1 = valoresPorIndice[c.codigo][i]
+      if (v0 && v1 && v0 !== 0) sumAfec += ((v1-v0)/v0)*100*(c.coef/100)
+    })
+    return { ...c, afec: sumAfec }
+  })
+
+  // Barras de componentes
+  const maxAfec = Math.max(...afecciones.map(a => Math.abs(a.afec)), 1)
+  const colores = { IPC:'#6366f1', USD:'#f59e0b', GR3:'#10b981', CCT:'#3b82f6', IPIM:'#8b5cf6' }
+
+  const barras = afecciones.map(c => `
+    <div style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="font-weight:600;color:#1e293b">${c.codigo} <span style="font-weight:400;color:#64748b;font-size:13px">${INDICES_META[c.codigo]?.label || c.codigo}</span></span>
+        <span style="font-weight:700;color:${c.afec>=0?'#059669':'#dc2626'}">${c.afec>=0?'+':''}${c.afec.toFixed(2)}%</span>
+      </div>
+      <div style="background:#f1f5f9;border-radius:99px;height:10px;overflow:hidden">
+        <div style="width:${Math.abs(c.afec)/maxAfec*100}%;background:${colores[c.codigo]||'#6366f1'};height:100%;border-radius:99px;transition:width .3s"></div>
+      </div>
+      <div style="font-size:12px;color:#94a3b8;margin-top:4px">Ponderación: ${c.coef}%</div>
+    </div>`).join('')
+
+  // Tabla evolución
+  const filasMeses = periodos.map((p, i) => {
+    const t = totalesMensuales[i]
+    const m = montos[i+1]
+    const color = t.valid && t.val >= 0 ? '#059669' : '#dc2626'
+    return `<tr style="border-bottom:1px solid #f1f5f9">
+      <td style="padding:10px 16px;font-weight:500;color:#1e293b">${p.label}</td>
+      <td style="padding:10px 16px;text-align:right;color:#1e293b">$${m.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:10px 16px;text-align:right;font-weight:600;color:${color}">${t.valid?(t.val>=0?'+':'')+t.val.toFixed(3)+'%':'—'}</td>
+    </tr>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>PoliCalc — ${nombreContrato}</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0 }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f8fafc; color:#1e293b; padding:40px 20px }
+  .page { max-width:900px; margin:0 auto }
+  @media print {
+    body { background:white; padding:0 }
+    .no-print { display:none }
+    .card { break-inside:avoid }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div style="background:linear-gradient(135deg,#1e293b 0%,#334155 100%);border-radius:16px;padding:36px 40px;margin-bottom:24px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
+      <div>
+        <div style="font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px">PoliCalc — Actualización Contractual</div>
+        <div style="font-size:28px;font-weight:700;margin-bottom:4px">${nombreContrato}</div>
+        <div style="font-size:14px;color:#94a3b8">${formula.nombre} &nbsp;·&nbsp; ${formula.empresa || currentOrg.nombre}</div>
+        <div style="font-size:13px;color:#64748b;margin-top:6px">Período: ${periodos[0].label} → ${periodos[periodos.length-1].label} &nbsp;·&nbsp; ${hoy}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:4px">Variación acumulada</div>
+        <div style="font-size:48px;font-weight:800;color:${positivo?'#34d399':'#f87171'}">${positivo?'+':''}${acumTotal.toFixed(2)}%</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px">
+    <div style="background:white;border-radius:12px;padding:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Monto Base</div>
+      <div style="font-size:24px;font-weight:700;color:#1e293b">$${montoBase.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:12px;color:#94a3b8;margin-top:4px">${periodos[0].label}</div>
+    </div>
+    <div style="background:white;border-radius:12px;padding:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Monto Actualizado</div>
+      <div style="font-size:24px;font-weight:700;color:${positivo?'#059669':'#dc2626'}">$${montoFinal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:12px;color:#94a3b8;margin-top:4px">${periodos[periodos.length-1].label}</div>
+    </div>
+    <div style="background:white;border-radius:12px;padding:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Diferencia</div>
+      <div style="font-size:24px;font-weight:700;color:${positivo?'#059669':'#dc2626'}">${positivo?'+':''}$${diferencia.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:12px;color:#94a3b8;margin-top:4px">${periodos.length} meses</div>
+    </div>
+  </div>
+
+  <!-- COMPOSICIÓN -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+    <div style="background:white;border-radius:12px;padding:28px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#475569;margin-bottom:20px">Composición de la Fórmula</div>
+      ${barras}
+    </div>
+    <div style="background:white;border-radius:12px;padding:28px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#475569;margin-bottom:20px">Evolución Mensual</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="padding:8px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;font-weight:600">Mes</th>
+            <th style="padding:8px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;font-weight:600">Monto</th>
+            <th style="padding:8px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;font-weight:600">Var.</th>
+          </tr>
+        </thead>
+        <tbody>${filasMeses}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div style="text-align:center;padding:20px;color:#94a3b8;font-size:12px">
+    Generado por <strong>PoliCalc</strong> · ${hoy} · Datos: INDEC, BNA, YPF
+  </div>
+
+  <!-- BOTÓN IMPRIMIR -->
+  <div class="no-print" style="text-align:center;margin-top:24px">
+    <button onclick="window.print()" style="background:#1e293b;color:white;border:none;padding:12px 32px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">🖨️ Guardar como PDF</button>
+  </div>
+
+</div>
+</body>
+</html>`
+
+  const win = window.open('', '_blank')
+  win.document.write(html)
+  win.document.close()
 }
