@@ -59,8 +59,41 @@ function showLogin() {
     <input type="password" id="pw-input" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()"/>
     <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="doLogin()">Ingresar con email</button>
     <div class="login-msg" id="login-msg"></div>
-    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="showSignup()">Crear cuenta nueva</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="showSignup()">Crear cuenta nueva</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;color:var(--text3)" onclick="showRecuperar()">¿Olvidaste tu contraseña?</button>
   `
+}
+
+function showRecuperar() {
+  document.getElementById('login-content').innerHTML = `
+    <h3 style="font-size:15px;font-weight:600;margin-bottom:16px;color:var(--text)">Recuperar contraseña</h3>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">
+      Ingresá tu email y te enviamos un link para restablecer tu contraseña.
+    </p>
+    <input type="email" id="email-recuperar" placeholder="Tu email" autofocus/>
+    <button class="btn btn-accent" style="width:100%;margin-top:6px" onclick="enviarRecuperar()">Enviar link</button>
+    <div class="login-msg" id="login-msg"></div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="showLogin()">← Volver al login</button>
+  `
+}
+
+async function enviarRecuperar() {
+  const email = document.getElementById('email-recuperar').value.trim()
+  const msg = document.getElementById('login-msg')
+  if (!email) { msg.textContent = 'Ingresá tu email'; msg.className = 'login-msg err'; return }
+  
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin
+  })
+  
+  if (error) {
+    msg.textContent = error.message
+    msg.className = 'login-msg err'
+  } else {
+    msg.textContent = '✓ Email enviado — revisá tu bandeja de entrada'
+    msg.className = 'login-msg'
+    msg.style.color = 'var(--green)'
+  }
 }
 
 function showSignup() {
