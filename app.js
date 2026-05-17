@@ -175,7 +175,7 @@ function renderMatriz() {
     <div class="page-head">
       <div><div class="page-title">Matriz de actualización</div><div class="page-sub">Cálculo mensual con fórmula polinómica</div></div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="exportMatrizCSV()">
+        <button class="btn btn-ghost" onclick="exportarExcel()">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2,10 L2,13 C2,13.5 2.5,14 3,14 L13,14 C13.5,14 14,13.5 14,13 L14,10"/><polyline points="5,6 8,2 11,6"/><line x1="8" y1="2" x2="8" y2="11"/></svg>
           Exportar
         </button>
@@ -752,4 +752,161 @@ async function eliminarContrato(id) {
   toast('Contrato eliminado', 'success')
   await loadContratos()
   renderMatriz()
+}
+
+async function exportarExcel() {
+  if (!window._matrizActual) { toast('Calculá la matriz primero', 'warn'); return }
+
+  if (!window.XLSX) {
+    toast('Cargando Excel...', 'success')
+    await new Promise((res, rej) => {
+      const s = document.createElement('script')
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+      s.onload = res; s.onerror = rej
+      document.head.appendChild(s)
+    })
+  }
+
+  const { formula, periodos, componentes, valoresPorIndice, totalesMensuales, montos } = window._matrizActual
+  const pkPrev = getPeriodoPrevio(periodos[0])
+  const nombreContrato = document.getElementById('contrato-nombre').value || 'Contrato'
+  const hoy = new Date().toLocaleDateString('es-AR')
+  const fmtPeso = '"$"#,##0.00'
+  const fmtPct = '+0.00%;-0.00%;0.00%'
+
+  let acumTotal = 0
+  totalesMensuales.forEach(t => { if (t.valid) acumTotal = ((1+acumTotal/100)*(1+t.val/100)-1)*100 })
+  const montoBase = montos[0]
+  const montoFinal = montos[montos.length-1]
+
+  // ════ HOJA 1: RESUMEN EJECUTIVO ════
+  const resumen = [
+    ['POLICALC — ACTUALIZACIÓN CONTRACTUAL', '', ''],
+    ['', '', ''],
+    ['Contrato', nombreContrato, ''],
+    ['Fórmula', formula.nombre, ''],
+    ['Empresa', formula.empresa || currentOrg.nombre, ''],
+    ['Período', `${periodos[0].label} → ${periodos[periodos.length-1].label}`, ''],
+    ['Fecha de cálculo', hoy, ''],
+    ['', '', ''],
+    ['── INDICADORES CLAVE', '', ''],
+    ['', '', ''],
+    ['Monto base', montoBase, ''],
+    ['Monto actualizado', montoFinal, ''],
+    ['Diferencia', montoFinal - montoBase, ''],
+    ['Variación acumulada', acumTotal / 100, ''],
+    ['Meses analizados', periodos.length, ''],
+    ['', '', ''],
+    ['── COMPOSICIÓN DE LA FÓRMULA', '', ''],
+    ['', '', ''],
+    ['Índice', 'Ponderación', 'Afección acumulada'],
+  ]
+
+  componentes.forEach(c => {
+    let sumAfec = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(c.codigo, pkPrev) : valoresPorIndice[c.codigo][i-1]
+      const v1 = valoresPorIndice[c.codigo][i]
+      if (v0 && v1 && v0 !== 0) sumAfec += ((v1-v0)/v0)*100*(c.coef/100)
+    })
+    resumen.push([`${c.codigo} — ${INDICES_META[c.codigo]?.label || c.codigo}`, c.coef/100, sumAfec/100])
+  })
+
+  resumen.push(['', '', ''])
+  resumen.push(['── EVOLUCIÓN DEL MONTO', '', ''])
+  resumen.push(['', '', ''])
+  resumen.push(['Mes', 'Monto ($)', 'Variación mensual'])
+  periodos.forEach((p, i) => {
+    const t = totalesMensuales[i]
+    resumen.push([p.label, montos[i+1], t.valid ? t.val/100 : null])
+  })
+
+  const wsR = XLSX.utils.aoa_to_sheet(resumen)
+  wsR['!cols'] = [{wch:36},{wch:22},{wch:20}]
+
+  // Formato celdas resumen
+  if (wsR['B11']) wsR['B11'].z = fmtPeso
+  if (wsR['B12']) wsR['B12'].z = fmtPeso
+  if (wsR['B13']) wsR['B13'].z = fmtPeso
+  if (wsR['B14']) wsR['B14'].z = fmtPct
+  const baseComp = 20
+  componentes.forEach((c, i) => {
+    const r = baseComp + i
+    if (wsR[`B${r}`]) wsR[`B${r}`].z = '0%'
+    if (wsR[`C${r}`]) wsR[`C${r}`].z = fmtPct
+  })
+  const baseMes = baseComp + componentes.length + 4
+  periodos.forEach((p, i) => {
+    const r = baseMes + i
+    if (wsR[`B${r}`]) wsR[`B${r}`].z = fmtPeso
+    if (wsR[`C${r}`]) wsR[`C${r}`].z = fmtPct
+  })
+
+  // ════ HOJA 2: MATRIZ COMPLETA ════
+  const enc = ['Índice', 'Coef.', ...periodos.map(p => p.label), 'TOTAL']
+  const filas = [enc]
+
+  componentes.forEach(comp => {
+    const filaVar = [`${comp.codigo} — ${INDICES_META[comp.codigo]?.label || comp.codigo}`, `${comp.coef}%`]
+    let sumVar = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i-1]
+      const v1 = valoresPorIndice[comp.codigo][i]
+      let v = null
+      if (v0 && v1 && v0 !== 0) { v = ((v1-v0)/v0); sumVar += v*100 }
+      filaVar.push(v)
+    })
+    filaVar.push(sumVar/100)
+    filas.push(filaVar)
+
+    const filaAfec = [`  ↳ Afección`, '']
+    let sumA = 0
+    periodos.forEach((p, i) => {
+      const v0 = i === 0 ? getValue(comp.codigo, pkPrev) : valoresPorIndice[comp.codigo][i-1]
+      const v1 = valoresPorIndice[comp.codigo][i]
+      let a = null
+      if (v0 && v1 && v0 !== 0) a = ((v1-v0)/v0)*(comp.coef/100)
+      if (a != null) sumA += a*100
+      filaAfec.push(a)
+    })
+    filaAfec.push(sumA/100)
+    filas.push(filaAfec)
+  })
+
+  const filaTotal = ['TOTAL AJUSTE MENSUAL', '100%']
+  let acum2 = 0
+  totalesMensuales.forEach(t => {
+    filaTotal.push(t.valid ? t.val/100 : null)
+    if (t.valid) acum2 = ((1+acum2/100)*(1+t.val/100)-1)*100
+  })
+  filaTotal.push(acum2/100)
+  filas.push(filaTotal)
+  filas.push(Array(enc.length).fill(''))
+
+  const filaMonto = ['MONTO CONTRATO ($)', `Base: $${montoBase.toLocaleString('es-AR')}`]
+  totalesMensuales.forEach((t, i) => { filaMonto.push(montos[i+1]) })
+  filaMonto.push(montoFinal)
+  filas.push(filaMonto)
+
+  const wsM = XLSX.utils.aoa_to_sheet(filas)
+  wsM['!cols'] = [{wch:34},{wch:8},...periodos.map(()=>({wch:10})),{wch:10}]
+
+  // Formato % matriz
+  for (let r = 1; r < filas.length; r++) {
+    const esMontoRow = r === filas.length - 1
+    for (let c = 2; c < enc.length; c++) {
+      const cell = XLSX.utils.encode_cell({r, c})
+      if (wsM[cell] && wsM[cell].v != null) {
+        wsM[cell].z = esMontoRow ? fmtPeso : fmtPct
+      }
+    }
+  }
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, wsR, 'Resumen Ejecutivo')
+  XLSX.utils.book_append_sheet(wb, wsM, 'Matriz Completa')
+
+  const filename = `PoliCalc_${nombreContrato.replace(/\s+/g,'_')}_${hoy.replace(/\//g,'-')}.xlsx`
+  XLSX.writeFile(wb, filename)
+  toast('Excel exportado ✓', 'success')
 }
