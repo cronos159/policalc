@@ -425,13 +425,70 @@ async function guardarCalculo() {
 
 async function renderHistorial() {
   const { data } = await sb.from('calculos_mensuales').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false })
-  let html = `<div class="page-head"><div><div class="page-title">Historial</div><div class="page-sub">Cálculos guardados</div></div></div><div class="card">`
-  if (!data || data.length === 0) { html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin cálculos guardados</div>` }
-  else { data.forEach(c => {
-    const fecha = new Date(c.created_at).toLocaleDateString('es-AR')
-    html += `<div class="hist-card"><div class="hist-head"><div><div style="font-size:14px;font-weight:500">${c.formula_snapshot.nombre}</div><div class="hist-meta">${fecha}</div><div class="hist-meta">$${c.monto_inicial.toLocaleString('es-AR')} → <strong style="color:var(--green)">$${c.monto_final.toLocaleString('es-AR')}</strong></div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700" class="${c.ajuste_acumulado >= 0 ? 'pct-up' : 'pct-dn'}">${c.ajuste_acumulado >= 0 ? '+' : ''}${c.ajuste_acumulado.toFixed(2)}%</div></div></div></div>`
-  }) }
-  html += `</div>`; document.getElementById('page-content').innerHTML = html
+  
+  let html = `
+    <div class="page-head">
+      <div><div class="page-title">Historial</div><div class="page-sub">Cálculos guardados</div></div>
+    </div>
+    <div class="card">
+  `
+
+  if (!data || data.length === 0) {
+    html += `<div style="text-align:center;padding:32px;color:var(--text3)">Sin cálculos guardados — calculá y guardá desde Matriz o Contratos</div>`
+  } else {
+    data.forEach(c => {
+      const fecha = new Date(c.created_at).toLocaleDateString('es-AR', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+      const formula = c.formula_snapshot || {}
+      const componentes = formula.componentes ? parseComponentes(formula.componentes) : []
+      const periodos = c.periodos_data?.periodos || []
+      const periodoDesde = periodos[0]?.label || '—'
+      const periodoHasta = periodos[periodos.length-1]?.label || '—'
+      const color = c.ajuste_acumulado >= 0 ? '#4ade80' : '#f87171'
+
+      const tags = componentes.map(comp =>
+        `<span class="tag ${INDICES_META[comp.codigo]?.color || 'tag-blue'}" style="font-size:10px">${comp.codigo} ${comp.coef}%</span>`
+      ).join('')
+
+      html += `
+        <div class="hist-card" style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                <span style="font-size:15px;font-weight:600">${formula.nombre || '—'}</span>
+                ${formula.empresa ? `<span style="font-size:11px;color:var(--text3)">${formula.empresa}</span>` : ''}
+              </div>
+              <div style="font-size:12px;color:var(--text3);margin-bottom:8px">
+                📅 ${periodoDesde} → ${periodoHasta} &nbsp;·&nbsp; ${fecha}
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+                ${tags}
+              </div>
+              <div style="font-size:13px">
+                <span style="color:var(--text3)">$${Number(c.monto_inicial).toLocaleString('es-AR',{maximumFractionDigits:2})}</span>
+                <span style="color:var(--text3);margin:0 6px">→</span>
+                <strong style="color:${color}">$${Number(c.monto_final).toLocaleString('es-AR',{maximumFractionDigits:2})}</strong>
+                <span style="color:${color};font-size:12px;margin-left:6px">(${c.ajuste_acumulado >= 0 ? '+' : ''}${Number(c.ajuste_acumulado).toFixed(2)}%)</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+              <div style="font-size:32px;font-weight:800;color:${color}">${c.ajuste_acumulado >= 0 ? '+' : ''}${Number(c.ajuste_acumulado).toFixed(2)}%</div>
+              <button onclick="borrarHistorial('${c.id}')" class="btn btn-ghost btn-sm" style="color:#ef4444;font-size:11px">🗑 Borrar</button>
+            </div>
+          </div>
+        </div>`
+    })
+  }
+
+  html += `</div>`
+  document.getElementById('page-content').innerHTML = html
+}
+
+async function borrarHistorial(id) {
+  if (!confirm('¿Borrar este cálculo del historial?')) return
+  const { error } = await sb.from('calculos_mensuales').delete().eq('id', id)
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  toast('Eliminado del historial', 'success')
+  renderHistorial()
 }
 
 async function renderFormulas() {
