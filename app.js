@@ -12,11 +12,15 @@ const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','A
 const MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
 
 const INDICES_META = {
-  'IPC':  {label:'IPC General (INDEC)', color:'tag-green'},
-  'IPIM': {label:'IPIM General (INDEC)', color:'tag-amber'},
-  'CCT':  {label:'CCT 644/12 Petroleros', color:'tag-blue'},
-  'USD':  {label:'Dólar Oficial BNA', color:'tag-red'},
-  'GR3':  {label:'GR3 Gasoil YPF', color:'tag-purple'},
+  'IPC':    {label:'IPC General (INDEC)',        color:'tag-green'},
+  'IPCNQN': {label:'IPC Neuquén',                color:'tag-green'},
+  'IPIM':   {label:'IPIM General (INDEC)',        color:'tag-amber'},
+  'CCT':    {label:'CCT 644/12 Petroleros',       color:'tag-blue'},
+  'UTHGRA': {label:'UTHGRA Gastronomía/Hotelería',color:'tag-blue'},
+  'FADEEAC':{label:'FADEEAC Transporte Cargas',   color:'tag-amber'},
+  'CAC':    {label:'CAC Construcción',            color:'tag-purple'},
+  'USD':    {label:'Dólar Oficial BNA',           color:'tag-red'},
+  'GR3':    {label:'GR3 Gasoil YPF',             color:'tag-purple'},
 }
 
 let currentUser = null
@@ -153,9 +157,10 @@ function updateClock() {
 
 function goPage(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
-  const idx = { 'matriz': 0, 'hist': 1, 'form': 2, 'indices': 3, 'alertas': 4 }[page]
+  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
   if (page === 'matriz') renderMatriz()
+  else if (page === 'contratos') renderContratos()
   else if (page === 'hist') renderHistorial()
   else if (page === 'form') renderFormulas()
   else if (page === 'indices') renderIndices()
@@ -1057,4 +1062,679 @@ function generarInforme() {
   const win = window.open('', '_blank')
   win.document.write(html)
   win.document.close()
+}
+
+// ════════════════════════════════════════════════════════════════
+// PÁGINA CONTRATOS — Gestión completa con ítems
+// ════════════════════════════════════════════════════════════════
+
+let contratoEditando = null
+let itemsContratoActual = []
+
+async function renderContratos() {
+  const { data: listaContratos } = await sb
+    .from('contratos')
+    .select('*, formulas(nombre)')
+    .eq('org_id', currentOrg.id)
+    .order('created_at', { ascending: false })
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Contratos</div>
+        <div class="page-sub">Gestión de contratos con ítems y actualización polinómica</div>
+      </div>
+      <button class="btn btn-accent" onclick="abrirNuevoContrato()">+ Nuevo contrato</button>
+    </div>
+  `
+
+  if (!listaContratos || listaContratos.length === 0) {
+    html += `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="font-size:32px;margin-bottom:12px">📋</div>
+        <div style="font-size:16px;font-weight:500;margin-bottom:8px">Sin contratos todavía</div>
+        <div style="color:var(--text3);font-size:13px;margin-bottom:20px">Creá tu primer contrato con ítems y fórmula polinómica</div>
+        <button class="btn btn-accent" onclick="abrirNuevoContrato()">+ Crear primer contrato</button>
+      </div>`
+  } else {
+    html += `<div style="display:grid;gap:12px">`
+    listaContratos.forEach(c => {
+      const desde = c.vigencia_desde ? new Date(c.vigencia_desde).toLocaleDateString('es-AR') : '—'
+      const hasta = c.vigencia_hasta ? new Date(c.vigencia_hasta).toLocaleDateString('es-AR') : '—'
+      html += `
+        <div class="card" style="padding:20px;cursor:pointer" onclick="abrirContrato('${c.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                ${c.nro_contrato ? `<span style="font-size:11px;background:var(--card-bg);border:1px solid var(--border);padding:2px 8px;border-radius:99px;color:var(--text3)">${c.nro_contrato}</span>` : ''}
+                <span style="font-size:16px;font-weight:600">${c.nombre}</span>
+              </div>
+              <div style="font-size:13px;color:var(--text3);margin-bottom:4px">${c.proveedor || ''} ${c.actividad ? '· '+c.actividad : ''}</div>
+              <div style="font-size:12px;color:var(--text3)">Vigencia: ${desde} → ${hasta}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${c.formulas?.nombre || 'Sin fórmula'}</div>
+              <div style="font-size:20px;font-weight:700;color:var(--accent)">$${Number(c.monto_base||0).toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+              ${c.gatillo_activo ? `<div style="font-size:11px;color:var(--amber)">⚡ Gatillo ${c.gatillo_pct}%</div>` : ''}
+            </div>
+          </div>
+        </div>`
+    })
+    html += `</div>`
+  }
+
+  document.getElementById('page-content').innerHTML = html
+}
+
+function abrirNuevoContrato() {
+  contratoEditando = null
+  itemsContratoActual = []
+  mostrarFormContrato()
+}
+
+async function abrirContrato(id) {
+  const { data: c } = await sb.from('contratos').select('*, formulas(nombre,componentes)').eq('id', id).single()
+  const { data: items } = await sb.from('contrato_items').select('*').eq('contrato_id', id).order('orden')
+  contratoEditando = c
+  itemsContratoActual = items || []
+  mostrarFormContrato()
+}
+
+function mostrarFormContrato() {
+  const c = contratoEditando
+  const optsFormulas = formulas.map(f =>
+    `<option value="${f.id}" ${c?.formula_id === f.id ? 'selected' : ''}>${f.nombre}</option>`
+  ).join('')
+
+  const optsIndices = Object.entries(INDICES_META).map(([k, v]) =>
+    `<option value="${k}">${k} — ${v.label}</option>`
+  ).join('')
+
+  const itemsHTML = itemsContratoActual.map((item, i) => renderItemRow(item, i)).join('')
+
+  const html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">${c ? 'Editar contrato' : 'Nuevo contrato'}</div>
+        <div class="page-sub">${c?.nombre || 'Completá los datos del contrato'}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="renderContratos()">← Volver</button>
+        ${c ? `<button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="eliminarContratoCompleto('${c.id}')">Eliminar</button>` : ''}
+      </div>
+    </div>
+
+    <!-- ENCABEZADO DEL CONTRATO -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Datos del contrato</div>
+      <div class="grid-4" style="margin-bottom:12px">
+        <div class="input-group" style="margin:0">
+          <label>Nro. de contrato</label>
+          <input type="text" id="c-nro" placeholder="Ej: C5836" value="${c?.nro_contrato||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Nombre / Descripción *</label>
+          <input type="text" id="c-nombre" placeholder="Ej: EyP CN Serv campamento" value="${c?.nombre||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Proveedor</label>
+          <input type="text" id="c-proveedor" placeholder="Ej: Servicios L&A S.R.L." value="${c?.proveedor||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Actividad</label>
+          <input type="text" id="c-actividad" placeholder="Ej: Comedor y Limpieza" value="${c?.actividad||''}"/>
+        </div>
+      </div>
+      <div class="grid-4" style="margin-bottom:12px">
+        <div class="input-group" style="margin:0">
+          <label>Vigencia desde</label>
+          <input type="date" id="c-desde" value="${c?.vigencia_desde||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Vigencia hasta</label>
+          <input type="date" id="c-hasta" value="${c?.vigencia_hasta||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Gestor de Compras</label>
+          <input type="text" id="c-gestor" placeholder="Nombre del gestor" value="${c?.gestor||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Controlador</label>
+          <input type="text" id="c-controlador" placeholder="Nombre del controlador" value="${c?.controlador||''}"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- FÓRMULA Y GATILLO -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Fórmula polinómica</div>
+      <div class="grid-4">
+        <div class="input-group" style="margin:0">
+          <label>Fórmula *</label>
+          <select id="c-formula">${optsFormulas}</select>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Período base (mes inicio)</label>
+          <input type="month" id="c-periodo-base" value="${c?.periodo_desde||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Período hasta</label>
+          <input type="month" id="c-periodo-hasta" value="${c?.periodo_hasta||''}"/>
+        </div>
+        <div class="input-group" style="margin:0">
+          <label>Moneda</label>
+          <select id="c-moneda">
+            <option value="ARS" ${c?.moneda==='ARS'||!c?.moneda?'selected':''}>Pesos Argentinos (ARS)</option>
+            <option value="USD" ${c?.moneda==='USD'?'selected':''}>Dólar (USD)</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="c-gatillo" ${c?.gatillo_activo?'checked':''} onchange="toggleGatillo(this.checked)"/>
+          Activar gatillo de actualización
+        </label>
+        <div id="gatillo-config" style="display:${c?.gatillo_activo?'flex':'none'};align-items:center;gap:8px">
+          <span style="font-size:13px;color:var(--text3)">Disparar cuando la variación acumulada supere</span>
+          <input type="number" id="c-gatillo-pct" value="${c?.gatillo_pct||5}" min="1" max="50" step="0.5" style="width:70px"/>
+          <span style="font-size:13px;color:var(--text3)">%</span>
+        </div>
+      </div>
+      ${c?.gatillo_activo ? `<div style="margin-top:8px;font-size:12px;color:var(--amber);background:rgba(245,158,11,0.1);padding:8px 12px;border-radius:8px">
+        ⚡ La actualización se aplica cuando la variación acumulada desde el período base supera el ${c.gatillo_pct}%
+      </div>` : ''}
+    </div>
+
+    <!-- ÍTEMS DEL CONTRATO -->
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="card-title" style="margin:0">Ítems del contrato</div>
+        <button class="btn btn-ghost btn-sm" onclick="agregarItem()">+ Agregar ítem</button>
+      </div>
+
+      <div id="items-container">
+        ${itemsHTML || `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">
+          Sin ítems todavía — hacé click en "+ Agregar ítem"
+        </div>`}
+      </div>
+
+      <div id="items-totales" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        ${renderTotalesItems()}
+      </div>
+    </div>
+
+    <!-- BOTÓN GUARDAR -->
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-bottom:32px">
+      <button class="btn btn-ghost" onclick="renderContratos()">Cancelar</button>
+      <button class="btn btn-accent" onclick="guardarContratoCompleto()">💾 Guardar contrato</button>
+      ${c ? `<button class="btn btn-accent" onclick="calcularContratoCompleto()" style="background:var(--green-dim,#052e16);color:#4ade80;border-color:#166534">
+        📊 Calcular actualización
+      </button>` : ''}
+    </div>
+
+    <!-- RESULTADO DE CÁLCULO -->
+    <div id="resultado-contrato"></div>
+  `
+
+  document.getElementById('page-content').innerHTML = html
+}
+
+function renderItemRow(item, idx) {
+  return `
+    <div class="item-row" data-idx="${idx}" style="display:grid;grid-template-columns:1fr 160px 36px;gap:8px;margin-bottom:8px;align-items:center">
+      <input type="text" class="item-desc" placeholder="Descripción del servicio/ítem" value="${item.descripcion||''}"
+        oninput="actualizarItemLocal(${idx},'descripcion',this.value)"/>
+      <div style="position:relative">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:12px;pointer-events:none">$</span>
+        <input type="number" class="item-monto" placeholder="0.00" value="${item.monto_base||''}" step="0.01"
+          style="padding-left:22px" oninput="actualizarItemLocal(${idx},'monto_base',parseFloat(this.value)||0);renderTotalesItemsDOM()"/>
+      </div>
+      <button onclick="eliminarItemLocal(${idx})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:18px;padding:0">×</button>
+    </div>`
+}
+
+function renderTotalesItems() {
+  const total = itemsContratoActual.reduce((s, i) => s + (Number(i.monto_base)||0), 0)
+  const count = itemsContratoActual.length
+  if (count === 0) return ''
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:13px;color:var(--text3)">${count} ítem${count!==1?'s':''}</span>
+      <span style="font-size:16px;font-weight:700">Total base: $${total.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+    </div>`
+}
+
+function renderTotalesItemsDOM() {
+  const el = document.getElementById('items-totales')
+  if (el) el.innerHTML = renderTotalesItems()
+}
+
+function actualizarItemLocal(idx, campo, valor) {
+  if (itemsContratoActual[idx]) itemsContratoActual[idx][campo] = valor
+}
+
+function eliminarItemLocal(idx) {
+  itemsContratoActual.splice(idx, 1)
+  refreshItemsDOM()
+}
+
+function agregarItem() {
+  itemsContratoActual.push({ descripcion: '', monto_base: 0, orden: itemsContratoActual.length })
+  refreshItemsDOM()
+}
+
+function refreshItemsDOM() {
+  const cont = document.getElementById('items-container')
+  if (!cont) return
+  if (itemsContratoActual.length === 0) {
+    cont.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">Sin ítems — hacé click en "+ Agregar ítem"</div>`
+  } else {
+    cont.innerHTML = itemsContratoActual.map((item, i) => renderItemRow(item, i)).join('')
+  }
+  renderTotalesItemsDOM()
+}
+
+function toggleGatillo(activo) {
+  const el = document.getElementById('gatillo-config')
+  if (el) el.style.display = activo ? 'flex' : 'none'
+}
+
+async function guardarContratoCompleto() {
+  const nombre = document.getElementById('c-nombre').value.trim()
+  const formulaId = document.getElementById('c-formula').value
+  if (!nombre) { toast('Poné un nombre al contrato', 'warn'); return }
+  if (!formulaId) { toast('Seleccioná una fórmula', 'warn'); return }
+
+  // Leer valores actuales de los inputs
+  document.querySelectorAll('.item-row').forEach((row, idx) => {
+    const desc = row.querySelector('.item-desc')?.value.trim()
+    const monto = parseFloat(row.querySelector('.item-monto')?.value) || 0
+    if (itemsContratoActual[idx]) {
+      itemsContratoActual[idx].descripcion = desc || ''
+      itemsContratoActual[idx].monto_base = monto
+    }
+  })
+
+  const totalBase = itemsContratoActual.reduce((s, i) => s + (Number(i.monto_base)||0), 0)
+  const gatilloActivo = document.getElementById('c-gatillo').checked
+  const gatilloPct = parseFloat(document.getElementById('c-gatillo-pct')?.value) || 5
+
+  const payload = {
+    org_id: currentOrg.id,
+    nombre,
+    nro_contrato: document.getElementById('c-nro').value.trim(),
+    proveedor: document.getElementById('c-proveedor').value.trim(),
+    actividad: document.getElementById('c-actividad').value.trim(),
+    gestor: document.getElementById('c-gestor').value.trim(),
+    controlador: document.getElementById('c-controlador').value.trim(),
+    vigencia_desde: document.getElementById('c-desde').value || null,
+    vigencia_hasta: document.getElementById('c-hasta').value || null,
+    formula_id: formulaId,
+    periodo_desde: document.getElementById('c-periodo-base').value || null,
+    periodo_hasta: document.getElementById('c-periodo-hasta').value || null,
+    moneda: document.getElementById('c-moneda').value,
+    monto_base: totalBase,
+    gatillo_activo: gatilloActivo,
+    gatillo_pct: gatilloPct
+  }
+
+  let contratoId = contratoEditando?.id
+
+  if (contratoEditando) {
+    const { error } = await sb.from('contratos').update(payload).eq('id', contratoId)
+    if (error) { toast('Error: ' + error.message, 'error'); return }
+  } else {
+    const { data, error } = await sb.from('contratos').insert(payload).select().single()
+    if (error) { toast('Error: ' + error.message, 'error'); return }
+    contratoId = data.id
+    contratoEditando = data
+  }
+
+  // Guardar ítems
+  await sb.from('contrato_items').delete().eq('contrato_id', contratoId)
+  const itemsValidos = itemsContratoActual.filter(i => i.descripcion && i.monto_base > 0)
+  if (itemsValidos.length > 0) {
+    const { error } = await sb.from('contrato_items').insert(
+      itemsValidos.map((item, idx) => ({
+        contrato_id: contratoId,
+        org_id: currentOrg.id,
+        descripcion: item.descripcion,
+        monto_base: item.monto_base,
+        orden: idx
+      }))
+    )
+    if (error) { toast('Error guardando ítems: ' + error.message, 'error'); return }
+  }
+
+  await loadContratos()
+  toast('Contrato guardado ✓', 'success')
+  
+  // Recargar para ver el botón calcular
+  const { data: updated } = await sb.from('contratos').select('*, formulas(nombre,componentes)').eq('id', contratoId).single()
+  contratoEditando = updated
+  const { data: updatedItems } = await sb.from('contrato_items').select('*').eq('contrato_id', contratoId).order('orden')
+  itemsContratoActual = updatedItems || []
+  mostrarFormContrato()
+}
+
+async function calcularContratoCompleto() {
+  if (!contratoEditando) return
+  
+  const formula = formulas.find(f => f.id === contratoEditando.formula_id)
+  if (!formula) { toast('Sin fórmula asignada', 'warn'); return }
+
+  const componentes = parseComponentes(formula.componentes)
+  const periodoDesde = contratoEditando.periodo_desde
+  const periodoHasta = contratoEditando.periodo_hasta
+
+  if (!periodoDesde || !periodoHasta) { toast('Definí el período base y hasta', 'warn'); return }
+
+  // Generar meses
+  const meses = []
+  let [y, m] = periodoDesde.split('-').map(Number)
+  const [fy, fm] = periodoHasta.split('-').map(Number)
+  while (y < fy || (y === fy && m <= fm)) {
+    meses.push(`${y}-${String(m).padStart(2,'0')}`)
+    m++; if (m > 12) { m = 1; y++ }
+  }
+
+  // Calcular variación total acumulada
+  let varAcum = 0
+  let mesBase = meses[0]
+  // Período previo al inicio para calcular variación del primer mes
+  const [y0, m0] = periodoDesde.split('-').map(Number)
+  const prevM = m0 === 1 ? 12 : m0 - 1
+  const prevY = m0 === 1 ? y0 - 1 : y0
+  const periodoBase = `${prevY}-${String(prevM).padStart(2,'0')}`
+
+  // Calcular mes a mes
+  const evolucion = []
+  for (let i = 0; i < meses.length; i++) {
+    const mes = meses[i]
+    const mesPrev = i === 0 ? periodoBase : meses[i-1]
+    let varMes = 0
+    let tieneData = false
+
+    componentes.forEach(comp => {
+      const v0 = indicesValores[comp.codigo]?.[mesPrev]?.valor
+      const v1 = indicesValores[comp.codigo]?.[mes]?.valor
+      if (v0 && v1 && v0 !== 0) {
+        varMes += ((v1 - v0) / v0) * 100 * (comp.coef / 100)
+        tieneData = true
+      }
+    })
+
+    if (tieneData) {
+      varAcum = ((1 + varAcum/100) * (1 + varMes/100) - 1) * 100
+      evolucion.push({ mes, varMes, varAcum })
+    }
+  }
+
+  // Aplicar gatillo si está activo
+  let varAplicada = varAcum
+  let gatilloInfo = ''
+  if (contratoEditando.gatillo_activo && contratoEditando.gatillo_pct) {
+    const umbral = Number(contratoEditando.gatillo_pct)
+    if (Math.abs(varAcum) < umbral) {
+      gatilloInfo = `<div style="padding:10px 14px;background:rgba(245,158,11,0.1);border-radius:8px;font-size:13px;color:#f59e0b;margin-bottom:16px">
+        ⚡ Gatillo no alcanzado — variación acumulada ${varAcum.toFixed(2)}% no supera el umbral de ${umbral}%
+      </div>`
+      varAplicada = 0
+    } else {
+      gatilloInfo = `<div style="padding:10px 14px;background:rgba(74,222,128,0.1);border-radius:8px;font-size:13px;color:#4ade80;margin-bottom:16px">
+        ✅ Gatillo disparado — variación ${varAcum.toFixed(2)}% supera el umbral de ${umbral}%
+      </div>`
+    }
+  }
+
+  // Calcular ítems actualizados
+  const moneda = contratoEditando.moneda === 'USD' ? 'USD' : '$'
+  const itemsActualizados = itemsContratoActual.map(item => {
+    const montoActualizado = item.monto_base * (1 + varAplicada/100)
+    const diferencia = montoActualizado - item.monto_base
+    return { ...item, montoActualizado, diferencia }
+  })
+
+  const totalBase = itemsActualizados.reduce((s, i) => s + i.monto_base, 0)
+  const totalActualizado = itemsActualizados.reduce((s, i) => s + i.montoActualizado, 0)
+  const totalDif = totalActualizado - totalBase
+
+  // Render resultado
+  const filasItems = itemsActualizados.map(item => `
+    <tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:12px 16px">${item.descripcion}</td>
+      <td style="padding:12px 16px;text-align:right">${moneda} ${item.monto_base.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:12px 16px;text-align:right;color:var(--accent);font-weight:600">${moneda} ${item.montoActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:12px 16px;text-align:right;color:${item.diferencia>=0?'#4ade80':'#f87171'};font-weight:500">
+        ${item.diferencia>=0?'+':''}${moneda} ${item.diferencia.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+      </td>
+    </tr>`).join('')
+
+  const filasEvolucion = evolucion.map(e => `
+    <tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 16px">${e.mes}</td>
+      <td style="padding:8px 16px;text-align:right;color:${e.varMes>=0?'#4ade80':'#f87171'}">${e.varMes>=0?'+':''}${e.varMes.toFixed(3)}%</td>
+      <td style="padding:8px 16px;text-align:right;font-weight:600;color:${e.varAcum>=0?'#4ade80':'#f87171'}">${e.varAcum>=0?'+':''}${e.varAcum.toFixed(3)}%</td>
+    </tr>`).join('')
+
+  const resultado = document.getElementById('resultado-contrato')
+  if (!resultado) return
+
+  resultado.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Resultado de actualización</div>
+      
+      ${gatilloInfo}
+
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+        <div style="background:var(--card-bg);border-radius:10px;padding:16px;border:1px solid var(--border)">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Variación acumulada</div>
+          <div style="font-size:28px;font-weight:800;color:${varAcum>=0?'#4ade80':'#f87171'}">${varAcum>=0?'+':''}${varAcum.toFixed(2)}%</div>
+        </div>
+        <div style="background:var(--card-bg);border-radius:10px;padding:16px;border:1px solid var(--border)">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total base</div>
+          <div style="font-size:22px;font-weight:700">${moneda} ${totalBase.toLocaleString('es-AR',{maximumFractionDigits:2})}</div>
+        </div>
+        <div style="background:var(--card-bg);border-radius:10px;padding:16px;border:1px solid var(--border)">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total actualizado</div>
+          <div style="font-size:22px;font-weight:700;color:${varAplicada>=0?'#4ade80':'#f87171'}">${moneda} ${totalActualizado.toLocaleString('es-AR',{maximumFractionDigits:2})}</div>
+          <div style="font-size:12px;color:${totalDif>=0?'#4ade80':'#f87171'};margin-top:4px">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{maximumFractionDigits:2})}</div>
+        </div>
+      </div>
+
+      <!-- Tabla ítems -->
+      <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border);margin-bottom:16px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:var(--card-bg)">
+              <th style="padding:10px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Ítem</th>
+              <th style="padding:10px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Precio base</th>
+              <th style="padding:10px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Precio actualizado</th>
+              <th style="padding:10px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filasItems}
+            <tr style="background:var(--card-bg);font-weight:700;border-top:2px solid var(--border)">
+              <td style="padding:12px 16px">TOTAL</td>
+              <td style="padding:12px 16px;text-align:right">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              <td style="padding:12px 16px;text-align:right;color:var(--accent)">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              <td style="padding:12px 16px;text-align:right;color:${totalDif>=0?'#4ade80':'#f87171'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Evolución de índices -->
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--text3);padding:8px 0">Ver evolución mensual de índices</summary>
+        <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border);margin-top:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--card-bg)">
+                <th style="padding:8px 16px;text-align:left;color:var(--text3)">Período</th>
+                <th style="padding:8px 16px;text-align:right;color:var(--text3)">Var. mensual</th>
+                <th style="padding:8px 16px;text-align:right;color:var(--text3)">Var. acumulada</th>
+              </tr>
+            </thead>
+            <tbody>${filasEvolucion}</tbody>
+          </table>
+        </div>
+      </details>
+
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-ghost" onclick="exportarInformeContrato()">📄 Informe PDF</button>
+        <button class="btn btn-ghost" onclick="exportarExcelContrato()">↓ Excel</button>
+      </div>
+    </div>
+  `
+
+  // Guardar resultado para exportar
+  window._contratoCalculo = { contratoEditando, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula, moneda }
+
+  resultado.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+async function eliminarContratoCompleto(id) {
+  if (!confirm('¿Eliminar este contrato y todos sus ítems?')) return
+  await sb.from('contrato_items').delete().eq('contrato_id', id)
+  await sb.from('contratos').delete().eq('id', id)
+  toast('Contrato eliminado', 'success')
+  await loadContratos()
+  renderContratos()
+}
+
+function exportarInformeContrato() {
+  if (!window._contratoCalculo) { toast('Calculá primero', 'warn'); return }
+  const { contratoEditando: c, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula, moneda } = window._contratoCalculo
+  const hoy = new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'long',year:'numeric'})
+
+  const filasItems = itemsActualizados.map(i => `
+    <tr>
+      <td>${i.descripcion}</td>
+      <td style="text-align:right">${moneda} ${i.monto_base.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+      <td style="text-align:right;color:#059669;font-weight:600">${moneda} ${i.montoActualizado.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+      <td style="text-align:right;color:${i.diferencia>=0?'#059669':'#dc2626'}">${i.diferencia>=0?'+':''}${moneda} ${i.diferencia.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+    </tr>`).join('')
+
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"/>
+<title>PoliCalc — ${c.nombre}</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0 }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f8fafc; color:#1e293b; padding:40px 20px }
+.page { max-width:960px; margin:0 auto }
+table { width:100%; border-collapse:collapse }
+th,td { padding:10px 14px; border-bottom:1px solid #e2e8f0; font-size:13px }
+th { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#94a3b8; font-weight:600; background:#f8fafc; text-align:left }
+@media print { body{background:white;padding:0} .no-print{display:none} }
+</style></head><body><div class="page">
+
+  <div style="background:linear-gradient(135deg,#1e293b,#334155);border-radius:16px;padding:36px 40px;margin-bottom:24px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
+      <div>
+        <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px">PoliCalc — Actualización Contractual</div>
+        <div style="font-size:26px;font-weight:700;margin-bottom:4px">${c.nombre}</div>
+        ${c.nro_contrato ? `<div style="font-size:13px;color:#94a3b8">Contrato ${c.nro_contrato}</div>` : ''}
+        <div style="font-size:13px;color:#64748b;margin-top:6px">${c.proveedor||''} ${c.actividad?'· '+c.actividad:''}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px">Fórmula: ${formula.nombre}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Ajuste aplicado</div>
+        <div style="font-size:52px;font-weight:800;color:${varAplicada>=0?'#34d399':'#f87171'}">${varAplicada>=0?'+':''}${varAplicada.toFixed(2)}%</div>
+        <div style="font-size:12px;color:#64748b">${hoy}</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
+    <div style="background:white;border-radius:12px;padding:20px;border:1px solid #e2e8f0">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:6px">Total base</div>
+      <div style="font-size:22px;font-weight:700">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2})}</div>
+    </div>
+    <div style="background:white;border-radius:12px;padding:20px;border:1px solid #e2e8f0">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:6px">Total actualizado</div>
+      <div style="font-size:22px;font-weight:700;color:#059669">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2})}</div>
+    </div>
+    <div style="background:white;border-radius:12px;padding:20px;border:1px solid #e2e8f0">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:6px">Diferencia</div>
+      <div style="font-size:22px;font-weight:700;color:${totalDif>=0?'#059669':'#dc2626'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2})}</div>
+    </div>
+  </div>
+
+  <div style="background:white;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:20px;overflow:hidden">
+    <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;font-weight:600">Detalle de ítems</div>
+    <table>
+      <thead><tr>
+        <th>Descripción</th><th style="text-align:right">Precio base</th>
+        <th style="text-align:right">Precio actualizado</th><th style="text-align:right">Diferencia</th>
+      </tr></thead>
+      <tbody>
+        ${filasItems}
+        <tr style="font-weight:700;background:#f8fafc">
+          <td>TOTAL</td>
+          <td style="text-align:right">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+          <td style="text-align:right;color:#059669">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+          <td style="text-align:right;color:${totalDif>=0?'#059669':'#dc2626'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:24px">
+    Generado por <strong>PoliCalc</strong> · ${hoy} · Datos: INDEC, BNA, YPF
+  </div>
+
+  <div class="no-print" style="text-align:center;margin-top:20px">
+    <button onclick="window.print()" style="background:#1e293b;color:white;border:none;padding:12px 32px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">🖨️ Guardar como PDF</button>
+  </div>
+</div></body></html>`
+
+  const win = window.open('', '_blank')
+  win.document.write(html)
+  win.document.close()
+}
+
+async function exportarExcelContrato() {
+  if (!window._contratoCalculo) { toast('Calculá primero', 'warn'); return }
+  if (!window.XLSX) {
+    await new Promise((res,rej) => { const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s) })
+  }
+  const { contratoEditando: c, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula } = window._contratoCalculo
+  const hoy = new Date().toLocaleDateString('es-AR')
+
+  const filas = [
+    ['POLICALC — ACTUALIZACIÓN CONTRACTUAL'],
+    [],
+    ['Contrato', c.nombre], ['Nro.', c.nro_contrato||''], ['Proveedor', c.proveedor||''],
+    ['Actividad', c.actividad||''], ['Vigencia', `${c.vigencia_desde||''} → ${c.vigencia_hasta||''}`],
+    ['Fórmula', formula.nombre], ['Gestor', c.gestor||''], ['Controlador', c.controlador||''],
+    ['Fecha cálculo', hoy],
+    [],
+    ['Ajuste calculado', varAcum/100], ['Ajuste aplicado', varAplicada/100],
+    [],
+    ['DETALLE DE ÍTEMS', '', '', ''],
+    ['Descripción', 'Precio base', 'Precio actualizado', 'Diferencia'],
+    ...itemsActualizados.map(i => [i.descripcion, i.monto_base, i.montoActualizado, i.diferencia]),
+    ['TOTAL', totalBase, totalActualizado, totalDif],
+    [],
+    ['EVOLUCIÓN MENSUAL'],
+    ['Período', 'Var. mensual', 'Var. acumulada'],
+    ...evolucion.map(e => [e.mes, e.varMes/100, e.varAcum/100])
+  ]
+
+  const ws = XLSX.utils.aoa_to_sheet(filas)
+  ws['!cols'] = [{wch:40},{wch:18},{wch:18},{wch:18}]
+  const fmtPeso = '"$"#,##0.00'; const fmtPct = '+0.00%;-0.00%'
+  ;['B13','B14'].forEach(r => { if(ws[r]) ws[r].z = fmtPct })
+  const baseItems = 16
+  itemsActualizados.forEach((_, i) => {
+    ;['B','C','D'].forEach(col => { const r = col+(baseItems+i); if(ws[r]) ws[r].z = fmtPeso })
+  })
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Contrato')
+  XLSX.writeFile(wb, `PoliCalc_${c.nombre.replace(/\s+/g,'_')}_${hoy.replace(/\//g,'-')}.xlsx`)
+  toast('Excel exportado ✓', 'success')
 }
