@@ -226,7 +226,7 @@ function renderMatriz() {
           </div>
         </div>
       </div>
-      <button class="btn btn-accent btn-sm" style="margin-top:12px" onclick="calcularMatriz()">Calcular matriz</button>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-accent btn-sm" onclick="calcularMatriz()">Calcular matriz</button><button class="btn btn-ghost btn-sm" onclick="guardarContrato()">💾 Guardar contrato</button></div>
     </div>
     <div id="matriz-resultado"></div>
   `
@@ -703,4 +703,53 @@ function toast(msg, type = 'success') {
   c.innerHTML = `<span style="color:${color};font-size:14px">${icon}</span> ${msg}`
   document.body.appendChild(c)
   setTimeout(() => { c.style.animation = 'toastIn .2s reverse'; setTimeout(() => c.remove(), 200) }, 2400)
+}
+
+async function guardarContrato() {
+  const nombre = document.getElementById('contrato-nombre').value.trim()
+  const formulaId = document.getElementById('contrato-formula').value
+  const monto = parseFloat(document.getElementById('contrato-monto').value)
+  const mesDesde = parseInt(document.getElementById('mes-desde').value)
+  const anioDesde = parseInt(document.getElementById('anio-desde').value)
+  const mesHasta = parseInt(document.getElementById('mes-hasta').value)
+  const anioHasta = parseInt(document.getElementById('anio-hasta').value)
+
+  if (!nombre) { toast('Poné un nombre al contrato', 'warn'); return }
+  if (!formulaId) { toast('Seleccioná una fórmula', 'warn'); return }
+  if (isNaN(monto)) { toast('Poné un monto base', 'warn'); return }
+
+  const periodoDesde = `${anioDesde}-${String(mesDesde + 1).padStart(2, '0')}`
+  const periodoHasta = `${anioHasta}-${String(mesHasta + 1).padStart(2, '0')}`
+
+  if (contratoActual) {
+    // Actualizar existente
+    const { error } = await sb.from('contratos').update({
+      nombre, formula_id: formulaId, monto_base: monto,
+      periodo_desde: periodoDesde, periodo_hasta: periodoHasta
+    }).eq('id', contratoActual.id)
+    if (error) { toast('Error: ' + error.message, 'error'); return }
+    toast('Contrato actualizado ✓', 'success')
+  } else {
+    // Crear nuevo
+    const { data, error } = await sb.from('contratos').insert({
+      org_id: currentOrg.id, nombre, formula_id: formulaId,
+      monto_base: monto, periodo_desde: periodoDesde, periodo_hasta: periodoHasta
+    }).select().single()
+    if (error) { toast('Error: ' + error.message, 'error'); return }
+    contratoActual = data
+    toast('Contrato guardado ✓', 'success')
+  }
+
+  await loadContratos()
+  renderMatriz()
+}
+
+async function eliminarContrato(id) {
+  if (!confirm('¿Eliminar este contrato?')) return
+  const { error } = await sb.from('contratos').delete().eq('id', id)
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  contratoActual = null
+  toast('Contrato eliminado', 'success')
+  await loadContratos()
+  renderMatriz()
 }
