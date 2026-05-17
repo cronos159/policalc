@@ -219,7 +219,8 @@ function renderMatriz() {
           <div class="input-group" style="margin:0">
             <label>Contrato guardado</label>
             <select id="contrato-select" onchange="cargarContrato(this.value)">
-              <option value="">-- Nuevo / sin guardar --</option>
+              <option value="" disabled selected>Seleccioná un contrato guardado...</option>
+            <option value="">➕ Nuevo cálculo sin guardar</option>
               ${contratos.map(c => `<option value="${c.id}" ${contratoActual?.id === c.id ? 'selected' : ''}>${c.nombre}</option>`).join('')}
             </select>
           </div>
@@ -287,6 +288,48 @@ function renderMatriz() {
     <!-- Tabla de índices con estado -->
     <div id="indices-estado-matriz" style="display:none;margin-bottom:16px"></div>
 
+    <!-- Estado vacío con guía -->
+    <div id="matriz-vacio" style="display:block">
+      <div class="card" style="text-align:center;padding:48px 32px;border:1px dashed var(--border2)">
+        <div style="font-size:40px;margin-bottom:16px">📊</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:8px">Calculá tu primera matriz</div>
+        <div style="color:var(--text3);font-size:13px;margin-bottom:28px;max-width:400px;margin-left:auto;margin-right:auto;line-height:1.6">
+          Completá la configuración y hacé click en <strong style="color:var(--accent)">Calcular matriz</strong> para ver los resultados
+        </div>
+        <div style="display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-bottom:28px">
+          <div style="text-align:center">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:#0a0a0a;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px">1</div>
+            <div style="font-size:12px;color:var(--text2)">Elegí la fórmula</div>
+          </div>
+          <div style="width:1px;background:var(--border);align-self:stretch;margin:0 8px"></div>
+          <div style="text-align:center">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--surface3);color:var(--text2);font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px">2</div>
+            <div style="font-size:12px;color:var(--text2)">Ingresá el monto base</div>
+          </div>
+          <div style="width:1px;background:var(--border);align-self:stretch;margin:0 8px"></div>
+          <div style="text-align:center">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--surface3);color:var(--text2);font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px">3</div>
+            <div style="font-size:12px;color:var(--text2)">Definí el período</div>
+          </div>
+          <div style="width:1px;background:var(--border);align-self:stretch;margin:0 8px"></div>
+          <div style="text-align:center">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--surface3);color:var(--text2);font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px">4</div>
+            <div style="font-size:12px;color:var(--text2)">Calculá</div>
+          </div>
+        </div>
+        ${formulas.length === 0 ? `
+        <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px 20px;display:inline-block;margin-bottom:16px">
+          <div style="font-size:13px;color:#f59e0b;font-weight:500;margin-bottom:4px">⚠ No tenés fórmulas creadas</div>
+          <div style="font-size:12px;color:var(--text3)">Antes de calcular necesitás crear una fórmula polinómica</div>
+        </div>
+        <br/>
+        <button class="btn btn-accent" onclick="goPage('form')">→ Ir a Fórmulas</button>` : 
+        `<button class="btn btn-accent" onclick="document.getElementById('config-matriz').style.display='block';document.getElementById('config-toggle-icon').textContent='▼';document.getElementById('matriz-vacio').style.display='none'">
+          📊 Comenzar cálculo
+        </button>`}
+      </div>
+    </div>
+
     <!-- Resultado de la tabla -->
     <div id="matriz-resultado"></div>
   `
@@ -297,7 +340,11 @@ function renderMatriz() {
   })
   document.getElementById('mes-desde').value = 8
   document.getElementById('mes-hasta').value = 2
-  if (contratoActual) calcularMatriz()
+  if (contratoActual) { calcularMatriz() } else {
+    // Sin contrato: mostrar config expandida
+    const vacioEl = document.getElementById('matriz-vacio')
+    if (vacioEl) vacioEl.style.display = 'block'
+  }
 }
 
 function toggleConfigMatriz() {
@@ -491,6 +538,8 @@ function renderMatrizTabla(formula, periodos, montoBase) {
 
   document.getElementById('matriz-resultado').innerHTML = html
   window._matrizActual = { formula, periodos, montoBase, totalesMensuales, montos, componentes, valoresPorIndice }
+  const vacioEl = document.getElementById('matriz-vacio')
+  if (vacioEl) vacioEl.style.display = 'none'
 
   // Colapsar config después de calcular
   const configEl = document.getElementById('config-matriz')
