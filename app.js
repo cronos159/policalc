@@ -147,6 +147,24 @@ async function checkAlertas() {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none'
   document.getElementById('app-shell').style.display = 'grid'
+
+  // Mostrar item Admin solo para superadmin
+  if (currentUser?.rol === 'superadmin') {
+    const navAdmin = document.getElementById('nav-admin-container')
+    if (navAdmin) {
+      navAdmin.innerHTML = `
+        <div style="height:1px;background:var(--border);margin:8px 0"></div>
+        <div class="nav-item" onclick="goPage('admin')">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="5" r="2.5"/>
+            <path d="M2,13 C2,10.2 4.7,8 8,8 C11.3,8 14,10.2 14,13"/>
+            <circle cx="13" cy="4" r="1.5" fill="currentColor" stroke="none"/>
+          </svg>
+          Admin
+        </div>`
+    }
+  }
+
   goPage('matriz')
 }
 
@@ -157,7 +175,7 @@ function updateClock() {
 
 function goPage(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
-  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5 }[page]
+  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5, 'admin': 6 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
   if (page === 'matriz') renderMatriz()
   else if (page === 'contratos') renderContratos()
@@ -165,6 +183,7 @@ function goPage(page) {
   else if (page === 'form') renderFormulas()
   else if (page === 'indices') renderIndices()
   else if (page === 'alertas') renderAlertas()
+  else if (page === 'admin') renderAdmin()
 }
 
 // ════ HELPER CENTRAL — parsea componentes sin importar el formato ════
@@ -1811,4 +1830,299 @@ async function exportarExcelContrato() {
   XLSX.utils.book_append_sheet(wb, ws, 'Contrato')
   XLSX.writeFile(wb, `PoliCalc_${c.nombre.replace(/\s+/g,'_')}_${hoy.replace(/\//g,'-')}.xlsx`)
   toast('Excel exportado ✓', 'success')
+}
+
+// ════════════════════════════════════════════════════════════════
+// PANEL DE ADMIN — Solo superadmin
+// ════════════════════════════════════════════════════════════════
+
+async function renderAdmin() {
+  if (currentUser.rol !== 'superadmin') {
+    document.getElementById('page-content').innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">Acceso restringido</div>`
+    return
+  }
+
+  // Cargar todas las orgs
+  const { data: orgs } = await sb.from('organizaciones').select('*').order('created_at', { ascending: false })
+  const { data: usuarios } = await sb.from('usuarios').select('*').order('created_at', { ascending: false })
+  const { data: contratos } = await sb.from('contratos').select('org_id')
+
+  // Contar por org
+  const contratosXOrg = {}
+  contratos?.forEach(c => { contratosXOrg[c.org_id] = (contratosXOrg[c.org_id] || 0) + 1 })
+  const usuariosXOrg = {}
+  usuarios?.forEach(u => { usuariosXOrg[u.org_id] = (usuariosXOrg[u.org_id] || 0) + 1 })
+
+  const planColor = { trial: '#f59e0b', activo: '#4ade80', inactivo: '#ef4444' }
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Panel de administración</div>
+        <div class="page-sub">Gestión de organizaciones y usuarios — solo superadmin</div>
+      </div>
+      <button class="btn btn-accent" onclick="abrirNuevaOrg()">+ Nueva organización</button>
+    </div>
+
+    <!-- KPIs globales -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">Organizaciones</div>
+        <div style="font-size:32px;font-weight:800;color:var(--accent)">${orgs?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">Usuarios totales</div>
+        <div style="font-size:32px;font-weight:800;color:var(--accent)">${usuarios?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">Contratos totales</div>
+        <div style="font-size:32px;font-weight:800;color:var(--accent)">${contratos?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">En trial</div>
+        <div style="font-size:32px;font-weight:800;color:#f59e0b">${orgs?.filter(o=>o.plan==='trial').length || 0}</div>
+      </div>
+    </div>
+
+    <!-- Lista de organizaciones -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Organizaciones</div>
+      <div style="display:grid;gap:10px">
+  `
+
+  orgs?.forEach(org => {
+    const nContratos = contratosXOrg[org.id] || 0
+    const nUsuarios = usuariosXOrg[org.id] || 0
+    const color = planColor[org.plan] || '#94a3b8'
+    const created = org.created_at ? new Date(org.created_at).toLocaleDateString('es-AR') : '—'
+
+    html += `
+      <div style="display:grid;grid-template-columns:1fr auto;gap:12px;padding:14px 16px;background:var(--card-bg);border-radius:10px;border:1px solid var(--border);align-items:center">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:14px;font-weight:600">${org.nombre}</span>
+            <span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${color}22;color:${color};border:1px solid ${color}44">${org.plan}</span>
+            ${!org.activa ? '<span style="font-size:11px;color:#ef4444">● Inactiva</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text3)">${org.email_contacto || '—'} &nbsp;·&nbsp; ${nUsuarios} usuario${nUsuarios!==1?'s':''} &nbsp;·&nbsp; ${nContratos} contrato${nContratos!==1?'s':''} &nbsp;·&nbsp; desde ${created}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" onclick="verUsuariosOrg('${org.id}','${org.nombre}')">👥 Usuarios</button>
+          <button class="btn btn-ghost btn-sm" onclick="invitarUsuario('${org.id}','${org.nombre}')">+ Invitar</button>
+          <button class="btn btn-ghost btn-sm" onclick="editarOrg('${org.id}')">✏️</button>
+          <select onchange="cambiarPlan('${org.id}',this.value)" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)">
+            <option value="trial" ${org.plan==='trial'?'selected':''}>Trial</option>
+            <option value="activo" ${org.plan==='activo'?'selected':''}>Activo</option>
+            <option value="inactivo" ${org.plan==='inactivo'?'selected':''}>Inactivo</option>
+          </select>
+        </div>
+      </div>`
+  })
+
+  html += `</div></div>
+
+    <!-- Lista de usuarios -->
+    <div class="card">
+      <div class="card-title">Todos los usuarios</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:var(--card-bg)">
+              <th style="padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Usuario</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Email</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Organización</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Rol</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+  `
+
+  usuarios?.forEach(u => {
+    const org = orgs?.find(o => o.id === u.org_id)
+    const rolColor = u.rol === 'superadmin' ? '#f59e0b' : u.rol === 'admin' ? '#6366f1' : 'var(--text3)'
+    html += `
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 14px;font-weight:500">${u.nombre || '—'}</td>
+        <td style="padding:10px 14px;color:var(--text3)">${u.email || '—'}</td>
+        <td style="padding:10px 14px">${org?.nombre || '—'}</td>
+        <td style="padding:10px 14px"><span style="color:${rolColor};font-size:12px;font-weight:500">${u.rol}</span></td>
+        <td style="padding:10px 14px">
+          <select onchange="cambiarRolUsuario('${u.id}',this.value)" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)">
+            <option value="usuario" ${u.rol==='usuario'?'selected':''}>usuario</option>
+            <option value="admin" ${u.rol==='admin'?'selected':''}>admin</option>
+            <option value="superadmin" ${u.rol==='superadmin'?'selected':''}>superadmin</option>
+          </select>
+        </td>
+      </tr>`
+  })
+
+  html += `</tbody></table></div></div>`
+  document.getElementById('page-content').innerHTML = html
+}
+
+// ════ MODAL NUEVA ORG ════
+function abrirNuevaOrg() {
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:440px;border:1px solid var(--border)">
+      <h3 style="margin-bottom:20px;font-size:16px;font-weight:600">Nueva organización</h3>
+      <div class="input-group"><label>Nombre *</label><input type="text" id="no-nombre" placeholder="Ej: Servicios L&A S.R.L."/></div>
+      <div class="input-group"><label>Slug (identificador único) *</label><input type="text" id="no-slug" placeholder="Ej: servicios-la"/></div>
+      <div class="input-group"><label>Email de contacto</label><input type="email" id="no-email" placeholder="admin@empresa.com"/></div>
+      <div class="input-group"><label>Plan</label>
+        <select id="no-plan"><option value="trial">Trial</option><option value="activo">Activo</option></select>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="crearOrg()">Crear organización</button>
+      </div>
+    </div>`
+  document.body.appendChild(modal)
+}
+
+async function crearOrg() {
+  const nombre = document.getElementById('no-nombre').value.trim()
+  const slug = document.getElementById('no-slug').value.trim().toLowerCase().replace(/\s+/g,'-')
+  const email = document.getElementById('no-email').value.trim()
+  const plan = document.getElementById('no-plan').value
+
+  if (!nombre || !slug) { toast('Completá nombre y slug', 'warn'); return }
+
+  const { error } = await sb.from('organizaciones').insert({ nombre, slug, email_contacto: email, plan, activa: true })
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+
+  document.getElementById('modal-overlay').remove()
+  toast('Organización creada ✓', 'success')
+  renderAdmin()
+}
+
+async function cambiarPlan(orgId, plan) {
+  await sb.from('organizaciones').update({ plan }).eq('id', orgId)
+  toast(`Plan actualizado a ${plan} ✓`, 'success')
+}
+
+async function cambiarRolUsuario(userId, rol) {
+  await sb.from('usuarios').update({ rol }).eq('id', userId)
+  toast(`Rol actualizado a ${rol} ✓`, 'success')
+}
+
+async function verUsuariosOrg(orgId, orgNombre) {
+  const { data: usuarios } = await sb.from('usuarios').select('*').eq('org_id', orgId)
+  const { data: invitaciones } = await sb.from('invitaciones').select('*').eq('org_id', orgId)
+
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center'
+
+  let filas = usuarios?.map(u => `
+    <tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 12px">${u.nombre||'—'}</td>
+      <td style="padding:8px 12px;color:var(--text3)">${u.email||'—'}</td>
+      <td style="padding:8px 12px">${u.rol}</td>
+    </tr>`).join('') || '<tr><td colspan="3" style="padding:16px;text-align:center;color:var(--text3)">Sin usuarios</td></tr>'
+
+  let filasInv = invitaciones?.filter(i=>!i.usada).map(i => `
+    <div style="font-size:12px;padding:6px 10px;background:var(--card-bg);border-radius:6px;border:1px solid var(--border);display:flex;justify-content:space-between">
+      <span>${i.email}</span><span style="color:var(--text3)">${i.rol} · pendiente</span>
+    </div>`).join('') || '<div style="font-size:12px;color:var(--text3)">Sin invitaciones pendientes</div>'
+
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:500px;border:1px solid var(--border);max-height:80vh;overflow-y:auto">
+      <h3 style="margin-bottom:16px;font-size:16px">${orgNombre}</h3>
+      <div class="card-title">Usuarios activos</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
+        <thead><tr style="background:var(--card-bg)">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text3)">Nombre</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text3)">Email</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text3)">Rol</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+      <div class="card-title">Invitaciones pendientes</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">${filasInv}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" onclick="invitarUsuario('${orgId}','${orgNombre}')">+ Invitar usuario</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cerrar</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+function invitarUsuario(orgId, orgNombre) {
+  document.getElementById('modal-overlay')?.remove()
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:400px;border:1px solid var(--border)">
+      <h3 style="margin-bottom:16px;font-size:16px">Invitar usuario a ${orgNombre}</h3>
+      <div class="input-group"><label>Email del usuario *</label><input type="email" id="inv-email" placeholder="usuario@empresa.com"/></div>
+      <div class="input-group"><label>Rol</label>
+        <select id="inv-rol">
+          <option value="usuario">usuario</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+      <p style="font-size:12px;color:var(--text3);margin-bottom:16px">El usuario podrá registrarse con este email y quedará asignado automáticamente a ${orgNombre}.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="crearInvitacion('${orgId}')">Enviar invitación</button>
+      </div>
+    </div>`
+  document.body.appendChild(modal)
+}
+
+async function crearInvitacion(orgId) {
+  const email = document.getElementById('inv-email').value.trim()
+  const rol = document.getElementById('inv-rol').value
+  if (!email) { toast('Ingresá un email', 'warn'); return }
+
+  const { error } = await sb.from('invitaciones').insert({ org_id: orgId, email, rol })
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+
+  document.getElementById('modal-overlay').remove()
+  toast(`Invitación creada para ${email} ✓`, 'success')
+  renderAdmin()
+}
+
+async function editarOrg(orgId) {
+  const { data: org } = await sb.from('organizaciones').select('*').eq('id', orgId).single()
+  if (!org) return
+
+  document.getElementById('modal-overlay')?.remove()
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:440px;border:1px solid var(--border)">
+      <h3 style="margin-bottom:20px;font-size:16px">Editar organización</h3>
+      <div class="input-group"><label>Nombre</label><input type="text" id="eo-nombre" value="${org.nombre||''}"/></div>
+      <div class="input-group"><label>Email de contacto</label><input type="email" id="eo-email" value="${org.email_contacto||''}"/></div>
+      <div class="input-group"><label>Activa</label>
+        <select id="eo-activa">
+          <option value="true" ${org.activa?'selected':''}>Sí</option>
+          <option value="false" ${!org.activa?'selected':''}>No</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="guardarOrg('${orgId}')">Guardar</button>
+      </div>
+    </div>`
+  document.body.appendChild(modal)
+}
+
+async function guardarOrg(orgId) {
+  const nombre = document.getElementById('eo-nombre').value.trim()
+  const email_contacto = document.getElementById('eo-email').value.trim()
+  const activa = document.getElementById('eo-activa').value === 'true'
+  const { error } = await sb.from('organizaciones').update({ nombre, email_contacto, activa }).eq('id', orgId)
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  document.getElementById('modal-overlay').remove()
+  toast('Organización actualizada ✓', 'success')
+  renderAdmin()
 }
