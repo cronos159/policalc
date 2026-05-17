@@ -500,11 +500,15 @@ function agregarComponente() {
   div.style.cssText = 'display:grid;grid-template-columns:1fr 120px 36px;gap:8px;margin-bottom:8px'
   div.innerHTML = `
     <select class="f-codigo">
-      <option value="IPC">IPC — General INDEC</option>
-      <option value="IPIM">IPIM — INDEC</option>
-      <option value="USD">USD — Dólar BNA</option>
+      <option value="IPC">IPC — IPC General INDEC</option>
+      <option value="IPCNQN">IPCNQN — IPC Neuquén</option>
+      <option value="IPIM">IPIM — IPIM General INDEC</option>
+      <option value="USD">USD — Dólar Oficial BNA</option>
       <option value="GR3">GR3 — Gasoil YPF</option>
-      <option value="CCT">CCT — Salario Petrolero</option>
+      <option value="CCT">CCT — CCT 644/12 Petroleros</option>
+      <option value="UTHGRA">UTHGRA — Gastronomía/Hotelería</option>
+      <option value="FADEEAC">FADEEAC — Transporte Cargas</option>
+      <option value="CAC">CAC — Construcción</option>
     </select>
     <input type="number" class="f-coef" placeholder="%" min="1" max="100" oninput="actualizarSuma()"/>
     <button onclick="this.closest('.f-comp-row').remove();actualizarSuma()" style="background:var(--red-dim,#3a1a1a);color:#ef4444;border:none;border-radius:6px;cursor:pointer;font-size:16px">×</button>
@@ -564,87 +568,157 @@ async function eliminarFormula(id) {
 }
 
 async function renderIndices() {
-  const { data: catalogo } = await sb.from('indices_catalogo').select('*')
   const hoy = new Date()
   const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
 
+  // Todos los índices disponibles
+  const TODOS_INDICES = [
+    { codigo:'IPC',     label:'IPC General (INDEC)',         auto:true  },
+    { codigo:'IPCNQN',  label:'IPC Neuquén',                 auto:false },
+    { codigo:'IPIM',    label:'IPIM General (INDEC)',         auto:true  },
+    { codigo:'USD',     label:'Dólar Oficial BNA',           auto:true  },
+    { codigo:'GR3',     label:'GR3 Gasoil YPF',             auto:true  },
+    { codigo:'CCT',     label:'CCT 644/12 Petroleros',       auto:false },
+    { codigo:'UTHGRA',  label:'UTHGRA Gastronomía/Hotelería',auto:false },
+    { codigo:'FADEEAC', label:'FADEEAC Transporte Cargas',   auto:false },
+    { codigo:'CAC',     label:'CAC Construcción',            auto:false },
+  ]
+
+  const optsIndices = TODOS_INDICES.map(i =>
+    `<option value="${i.codigo}">${i.codigo} — ${i.label}</option>`
+  ).join('')
+
   let html = `
     <div class="page-head">
-      <div><div class="page-title">Índices</div><div class="page-sub">Estado de fuentes y carga manual</div></div>
+      <div><div class="page-title">Índices</div><div class="page-sub">Estado de fuentes, variaciones y carga manual</div></div>
       <button class="btn btn-ghost" onclick="sincronizarIndices()">↻ Sincronizar API</button>
     </div>
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-title">Cargar valor manual</div>
-      <div class="grid-4" style="align-items:flex-end">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:flex-end">
         <div class="input-group" style="margin:0">
           <label>Índice</label>
-          <select id="m-codigo">
-            <option value="GR3">GR3 — Gasoil YPF</option>
-            <option value="CCT">CCT — Salario Petrolero</option>
-            <option value="IPIM">IPIM — INDEC</option>
-            <option value="IPC">IPC — INDEC</option>
-            <option value="USD">USD — Dólar BNA</option>
-          </select>
+          <select id="m-codigo">${optsIndices}</select>
         </div>
         <div class="input-group" style="margin:0">
-          <label>Período (año-mes)</label>
+          <label>Período</label>
           <input type="month" id="m-periodo" value="${mesActual}"/>
         </div>
         <div class="input-group" style="margin:0">
-          <label>Valor del índice</label>
-          <input type="number" id="m-valor" placeholder="Ej: 1450.50" step="0.01"/>
+          <label>Valor del índice <span style="color:var(--text3);font-size:10px">(número acumulado, no %)</span></label>
+          <input type="number" id="m-valor" placeholder="Ej: 505.5" step="0.01"/>
         </div>
         <button class="btn btn-accent" onclick="guardarIndiceManual()">Guardar</button>
       </div>
       <p style="font-size:11px;color:var(--text3);margin-top:10px">
-        El valor que cargues reemplaza cualquier dato anterior para ese índice y período. Queda guardado como fuente oficial.
+        💡 Para índices salariales (CCT, UTHGRA, FADEEAC) cargá el valor del salario básico o el índice acumulado publicado. La variación % se calcula automáticamente comparando mes a mes.
       </p>
     </div>
 
     <div class="card">
-      <div class="card-title">Estado de índices</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="card-title" style="margin:0">Estado de índices</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:12px;color:var(--text3)">Ver en:</span>
+          <button class="btn btn-ghost btn-sm" id="btn-ver-valor" onclick="setModoIndices('valor')" style="opacity:0.5">Valor</button>
+          <button class="btn btn-accent btn-sm" id="btn-ver-pct" onclick="setModoIndices('pct')">% Variación</button>
+        </div>
+      </div>
+      <div id="indices-lista">
   `
 
-  const codigos = catalogo?.map(c => c.codigo) || ['IPC','USD','GR3','CCT','IPIM']
-  const todosLosCodigos = [...new Set([...codigos, ...Object.keys(indicesValores)])]
+  // Todos los códigos conocidos + los que hay en la base
+  const codigosEnBase = Object.keys(indicesValores)
+  const todosLosCodigos = [...new Set([...TODOS_INDICES.map(i=>i.codigo), ...codigosEnBase])]
 
   todosLosCodigos.forEach(codigo => {
-    const meta = catalogo?.find(c => c.codigo === codigo)
+    const meta = TODOS_INDICES.find(i => i.codigo === codigo)
     const valores = indicesValores[codigo] || {}
     const periodos = Object.keys(valores).sort().reverse()
     const ultimo = periodos[0]
     const valorUltimo = ultimo ? valores[ultimo].valor : null
-    const ultimosMeses = periodos.slice(0, 6)
+    const ultimosMeses = periodos.slice(0, 8)
+
+    // Calcular variaciones % para los últimos meses
+    const variaciones = []
+    for (let i = 0; i < ultimosMeses.length; i++) {
+      const p = ultimosMeses[i]
+      const pPrev = periodos[i+1]
+      if (pPrev && valores[p] && valores[pPrev]) {
+        const v1 = valores[p].valor
+        const v0 = valores[pPrev].valor
+        const pct = ((v1 - v0) / v0) * 100
+        variaciones.push({ periodo: p, pct, valor: v1 })
+      } else {
+        variaciones.push({ periodo: p, pct: null, valor: valores[p]?.valor || null })
+      }
+    }
+
+    const ultimaVar = variaciones[0]?.pct
+    const tagColor = INDICES_META[codigo]?.color || 'tag-green'
 
     html += `
-      <div class="hist-card">
+      <div class="hist-card" style="margin-bottom:12px">
         <div class="hist-head">
-          <div>
-            <div style="font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px">
-              <span class="tag tag-green">${codigo}</span>
-              ${meta?.nombre || codigo}
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span class="tag ${tagColor}">${codigo}</span>
+              ${meta?.label || codigo}
+              ${meta?.auto ? '<span style="font-size:10px;color:var(--text3);background:var(--card-bg);border:1px solid var(--border);padding:1px 6px;border-radius:99px">AUTO</span>' : '<span style="font-size:10px;color:#f59e0b;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);padding:1px 6px;border-radius:99px">MANUAL</span>'}
             </div>
-            <div class="hist-meta">Último: <strong>${valorUltimo ? valorUltimo.toLocaleString('es-AR', {maximumFractionDigits:2}) : '—'}</strong> ${ultimo ? `(${ultimo})` : ''}</div>
+            ${ultimo ? `<div class="hist-meta">Último: <strong>${valorUltimo?.toLocaleString('es-AR',{maximumFractionDigits:2})}</strong> (${ultimo}) ${ultimaVar !== null ? `· Var: <strong style="color:${ultimaVar>=0?'#4ade80':'#f87171'}">${ultimaVar>=0?'+':''}${ultimaVar.toFixed(2)}%</strong>` : ''}</div>` : '<div class="hist-meta" style="color:#f59e0b">Sin datos — cargá valores manualmente</div>'}
           </div>
-          <div style="text-align:right">
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
             <span class="source-chip ${valorUltimo ? 'ok' : 'manual'}">${valorUltimo ? '● Con datos' : '⚠ Sin datos'}</span>
           </div>
         </div>
+
         ${ultimosMeses.length > 0 ? `
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          ${ultimosMeses.map(p => `
-            <div style="font-size:11px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;text-align:center">
-              <div style="color:var(--text3)">${p}</div>
-              <div style="font-weight:500">${valores[p].valor.toLocaleString('es-AR', {maximumFractionDigits:1})}</div>
-            </div>
-          `).join('')}
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap" class="celdas-indice" data-codigo="${codigo}">
+          ${variaciones.map(v => {
+            const color = v.pct !== null ? (v.pct >= 0 ? '#4ade80' : '#f87171') : 'var(--text3)'
+            return `
+            <div style="font-size:11px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;text-align:center;min-width:72px;position:relative">
+              <div style="color:var(--text3);margin-bottom:3px">${v.periodo}</div>
+              <div class="celda-valor" style="font-weight:600">${v.valor !== null ? v.valor.toLocaleString('es-AR',{maximumFractionDigits:1}) : '—'}</div>
+              <div class="celda-pct" style="font-weight:600;color:${color};display:none">${v.pct !== null ? (v.pct>=0?'+':'')+v.pct.toFixed(2)+'%' : '—'}</div>
+              <button onclick="borrarIndiceManual('${codigo}','${v.periodo}')" title="Borrar este valor"
+                style="position:absolute;top:2px;right:2px;background:none;border:none;color:#ef4444;cursor:pointer;font-size:10px;opacity:0;transition:opacity .15s;line-height:1"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0">×</button>
+            </div>`
+          }).join('')}
         </div>` : ''}
       </div>`
   })
 
-  html += `</div>`
+  html += `</div></div>`
   document.getElementById('page-content').innerHTML = html
+}
+
+function setModoIndices(modo) {
+  const btnValor = document.getElementById('btn-ver-valor')
+  const btnPct = document.getElementById('btn-ver-pct')
+  if (modo === 'pct') {
+    document.querySelectorAll('.celda-valor').forEach(el => el.style.display = 'none')
+    document.querySelectorAll('.celda-pct').forEach(el => el.style.display = 'block')
+    btnValor.classList.remove('btn-accent'); btnValor.classList.add('btn-ghost'); btnValor.style.opacity = '0.5'
+    btnPct.classList.add('btn-accent'); btnPct.classList.remove('btn-ghost'); btnPct.style.opacity = '1'
+  } else {
+    document.querySelectorAll('.celda-valor').forEach(el => el.style.display = 'block')
+    document.querySelectorAll('.celda-pct').forEach(el => el.style.display = 'none')
+    btnPct.classList.remove('btn-accent'); btnPct.classList.add('btn-ghost'); btnPct.style.opacity = '0.5'
+    btnValor.classList.add('btn-accent'); btnValor.classList.remove('btn-ghost'); btnValor.style.opacity = '1'
+  }
+}
+
+async function borrarIndiceManual(codigo, periodo) {
+  if (!confirm(`¿Borrar ${codigo} ${periodo}?`)) return
+  const { error } = await sb.from('indices_valores').delete().eq('codigo', codigo).eq('periodo', periodo)
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  toast(`${codigo} ${periodo} eliminado`, 'success')
+  await loadIndicesValores()
+  renderIndices()
 }
 
 async function guardarIndiceManual() {
