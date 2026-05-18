@@ -2639,6 +2639,7 @@ async function renderAdmin() {
           <button class="btn btn-ghost btn-sm" onclick="verUsuariosOrg('${org.id}','${org.nombre}')">👥 Usuarios</button>
           <button class="btn btn-ghost btn-sm" onclick="invitarUsuario('${org.id}','${org.nombre}')">+ Invitar</button>
           <button class="btn btn-ghost btn-sm" onclick="editarOrg('${org.id}')">✏️</button>
+          <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="eliminarOrg('${org.id}','${org.nombre}')">🗑</button>
           <select onchange="cambiarPlan('${org.id}',this.value)" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)">
             <option value="trial" ${org.plan==='trial'?'selected':''}>Trial</option>
             <option value="activo" ${org.plan==='activo'?'selected':''}>Activo</option>
@@ -2676,12 +2677,13 @@ async function renderAdmin() {
         <td style="padding:10px 14px;color:var(--text3)">${u.email || '—'}</td>
         <td style="padding:10px 14px">${org?.nombre || '—'}</td>
         <td style="padding:10px 14px"><span style="color:${rolColor};font-size:12px;font-weight:500">${u.rol}</span></td>
-        <td style="padding:10px 14px">
+        <td style="padding:10px 14px;display:flex;gap:6px;align-items:center">
           <select onchange="cambiarRolUsuario('${u.id}',this.value)" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)">
             <option value="usuario" ${u.rol==='usuario'?'selected':''}>usuario</option>
             <option value="admin" ${u.rol==='admin'?'selected':''}>admin</option>
             <option value="superadmin" ${u.rol==='superadmin'?'selected':''}>superadmin</option>
           </select>
+          ${u.rol !== 'superadmin' ? `<button onclick="eliminarUsuario('${u.id}','${u.nombre}')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px" title="Eliminar usuario">🗑</button>` : ''}
         </td>
       </tr>`
   })
@@ -2843,6 +2845,32 @@ async function editarOrg(orgId) {
       </div>
     </div>`
   document.body.appendChild(modal)
+}
+
+async function eliminarOrg(orgId, nombre) {
+  if (!confirm(`¿Eliminar la organización "${nombre}" y TODOS sus datos? Esta acción no se puede deshacer.`)) return
+  
+  // Borrar en cascada
+  await sb.from('calculos_mensuales').delete().eq('org_id', orgId)
+  await sb.from('contrato_items').delete().eq('org_id', orgId)
+  await sb.from('contratos').delete().eq('org_id', orgId)
+  await sb.from('formulas').delete().eq('org_id', orgId)
+  await sb.from('alertas').delete().eq('org_id', orgId)
+  await sb.from('invitaciones').delete().eq('org_id', orgId)
+  await sb.from('usuarios').delete().eq('org_id', orgId)
+  await sb.from('organizaciones').delete().eq('id', orgId)
+
+  document.getElementById('modal-overlay')?.remove()
+  toast('Organización eliminada ✓', 'success')
+  renderAdmin()
+}
+
+async function eliminarUsuario(userId, nombre) {
+  if (!confirm(`¿Eliminar el usuario "${nombre}"? Perderá acceso a la plataforma.`)) return
+  const { error } = await sb.from('usuarios').delete().eq('id', userId)
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  toast(`Usuario ${nombre} eliminado ✓`, 'success')
+  renderAdmin()
 }
 
 async function guardarOrg(orgId) {
