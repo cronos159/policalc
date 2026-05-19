@@ -301,7 +301,7 @@ function goPage(page) {
   else if (page === 'alertas') renderAlertas()
   else if (page === 'admin') renderAdmin()
   else if (page === 'timeline') renderTimeline()
-  else if (page === 'crm') renderCRMUsuario()
+  else if (page === 'crm') renderCRM()
 }
 
 // ════ HELPER CENTRAL — parsea componentes sin importar el formato ════
