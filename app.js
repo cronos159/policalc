@@ -2216,9 +2216,100 @@ function mostrarFormContrato() {
 
     <!-- RESULTADO DE CÁLCULO -->
     <div id="resultado-contrato"></div>
+
+    <!-- ACTIVIDAD DEL CLIENTE -->
+    <div id="actividad-cliente-section"></div>
   `
 
   document.getElementById('page-content').innerHTML = html
+
+  // Cargar actividad del cliente si el contrato está guardado
+  if (c) cargarActividadCliente(currentOrg.id)
+}
+
+async function cargarActividadCliente(orgId) {
+  const { data: org } = await sb.from('organizaciones').select('nombre').eq('id', orgId).single()
+  const { data: interacciones } = await sb.from('crm_interacciones')
+    .select('*').eq('org_id', orgId)
+    .order('fecha', { ascending: false }).limit(5)
+  const { data: historial } = await sb.from('calculos_mensuales')
+    .select('*').eq('org_id', orgId)
+    .order('created_at', { ascending: false }).limit(5)
+
+  const TIPO_ICON = { llamada:'📞', reunion:'🤝', email:'📧', whatsapp:'💬', visita:'🏢', otro:'📌' }
+  const RESULTADO_COLOR = { positivo:'#4ade80', neutro:'#f59e0b', pendiente:'#6366f1', negativo:'#ef4444' }
+
+  let html = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+
+      <!-- Interacciones CRM -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin:0">💬 Actividad comercial — ${org?.nombre || ''}</div>
+          <button class="btn btn-ghost btn-sm" onclick="nuevaInteraccion('${orgId}');cargarActividadCliente('${orgId}')">+ Nueva</button>
+        </div>
+        ${!interacciones?.length ? `
+          <div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">
+            Sin interacciones registradas
+            <br/><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="nuevaInteraccion('${orgId}')">+ Registrar primera</button>
+          </div>` :
+          interacciones.map(i => {
+            const icon = TIPO_ICON[i.tipo] || '📌'
+            const resColor = RESULTADO_COLOR[i.resultado] || '#94a3b8'
+            const fecha = new Date(i.fecha).toLocaleDateString('es-AR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})
+            return `
+            <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:18px;flex-shrink:0">${icon}</span>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;flex-wrap:wrap;gap:4px">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-size:12px;font-weight:600;text-transform:capitalize">${i.tipo}</span>
+                    ${i.resultado ? `<span style="font-size:10px;padding:1px 6px;border-radius:99px;background:${resColor}15;color:${resColor};border:1px solid ${resColor}33">${i.resultado}</span>` : ''}
+                  </div>
+                  <span style="font-size:10px;color:var(--text3)">${fecha}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text2);line-height:1.4">${i.resumen}</div>
+                ${i.proximo_seguimiento ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px">📅 Seguimiento: ${new Date(i.proximo_seguimiento).toLocaleDateString('es-AR')}</div>` : ''}
+              </div>
+            </div>`
+          }).join('')
+        }
+        ${interacciones?.length ? `
+        <div style="margin-top:10px;text-align:center">
+          <button class="btn btn-ghost btn-sm" onclick="goPage('crm');setTimeout(()=>abrirFichaCliente('${orgId}'),300)">Ver historial completo →</button>
+        </div>` : ''}
+      </div>
+
+      <!-- Historial de cálculos -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin:0">📊 Historial de cálculos</div>
+          <button class="btn btn-ghost btn-sm" onclick="goPage('hist')">Ver todos →</button>
+        </div>
+        ${!historial?.length ? `
+          <div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">
+            Sin cálculos guardados<br/>
+            <span style="font-size:11px">Calculá y guardá para ver el historial aquí</span>
+          </div>` :
+          historial.map(h => {
+            const color = h.ajuste_acumulado >= 0 ? '#4ade80' : '#ef4444'
+            const fecha = new Date(h.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})
+            return `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:12px;font-weight:500">${h.formula_snapshot?.nombre || '—'}</div>
+                <div style="font-size:11px;color:var(--text3)">${fecha} · $${Number(h.monto_inicial).toLocaleString('es-AR',{maximumFractionDigits:0})} → $${Number(h.monto_final).toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+              </div>
+              <span style="font-size:15px;font-weight:800;color:${color}">${h.ajuste_acumulado>=0?'+':''}${Number(h.ajuste_acumulado).toFixed(2)}%</span>
+            </div>`
+          }).join('')
+        }
+      </div>
+    </div>
+  `
+
+  const el = document.getElementById('actividad-cliente-section')
+  if (el) el.innerHTML = html
 }
 
 function renderItemRow(item, idx) {
