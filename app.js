@@ -271,6 +271,9 @@ function showApp() {
     }
   }
 
+  // Renderizar ticker
+  renderTicker()
+
   // Restaurar última página visitada
   const ultimaPagina = localStorage.getItem('policalc_ultima_pagina') || 'dashboard'
   const paginasValidas = ['dashboard','matriz','contratos','hist','form','indices','alertas','admin','timeline','crm']
@@ -467,6 +470,66 @@ function renderMatriz() {
     const vacioEl = document.getElementById('matriz-vacio')
     if (vacioEl) vacioEl.style.display = 'block'
   }
+}
+
+// ════ TICKER FINANCIERO ════
+function renderTicker() {
+  const track = document.getElementById('ticker-track')
+  if (!track) return
+
+  const LABELS = {
+    IPC:    'IPC Nacional',
+    IPCNQN: 'IPC Neuquén',
+    IPIM:   'IPIM',
+    USD:    'USD BNA',
+    GR3:    'Gasoil YPF',
+    CCT:    'CCT Petroleros',
+    UTHGRA: 'UTHGRA',
+  }
+
+  const UNIDADES = {
+    USD:  '$',
+    GR3:  '$/L',
+    CCT:  '$',
+    UTHGRA: '$',
+  }
+
+  const items = []
+
+  Object.entries(indicesValores).forEach(([codigo, vals]) => {
+    const periodos = Object.keys(vals).sort().reverse()
+    const ultimo = periodos[0]
+    const anterior = periodos[1]
+    if (!ultimo) return
+
+    const v1 = vals[ultimo]?.valor
+    const v0 = anterior ? vals[anterior]?.valor : null
+    const pct = v1 && v0 ? ((v1 - v0) / v0 * 100) : null
+    const unidad = UNIDADES[codigo] || ''
+    const label = LABELS[codigo] || codigo
+
+    const varClass = pct === null ? 'ticker-var-neu' : pct > 0 ? 'ticker-var-pos' : pct < 0 ? 'ticker-var-neg' : 'ticker-var-neu'
+    const varStr = pct !== null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—'
+    const valorStr = v1 ? `${unidad}${v1.toLocaleString('es-AR', {maximumFractionDigits: v1 > 1000 ? 0 : 2})}` : '—'
+
+    items.push(`
+      <span class="ticker-item">
+        <span class="ticker-codigo">${codigo}</span>
+        <span class="ticker-valor">${label}</span>
+        <span class="ticker-valor" style="color:var(--text2)">${valorStr}</span>
+        <span class="${varClass}">${varStr}</span>
+        <span style="font-size:10px;color:var(--text3)">${ultimo}</span>
+      </span>`)
+  })
+
+  if (items.length === 0) {
+    track.innerHTML = '<span class="ticker-loading">Sin datos de índices</span>'
+    return
+  }
+
+  // Duplicar para el scroll infinito
+  const itemsHTML = items.join('')
+  track.innerHTML = itemsHTML + itemsHTML
 }
 
 function toggleConfigMatriz() {

@@ -184,4 +184,91 @@ input::placeholder{color:var(--text4)}
   .main{padding:20px}
   .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
   .page-head{flex-direction:column;align-items:flex-start;gap:12px}
+}/* ════ TICKER FINANCIERO ════ */
+.ticker-bar {
+  grid-column: 1 / -1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  height: 32px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  position: relative;
 }
+.ticker-bar::before,
+.ticker-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 60px;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+.ticker-bar::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+.ticker-bar::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+.ticker-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  white-space: nowrap;
+  animation: ticker-scroll 40s linear infinite;
+  will-change: transform;
+}
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 24px;
+  border-right: 1px solid var(--border);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+.ticker-codigo {
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 1px;
+  font-size: 10px;
+}
+.ticker-valor {
+  color: var(--text);
+  font-weight: 500;
+}
+.ticker-var-pos {
+  color: #4ade80;
+  font-weight: 600;
+}
+.ticker-var-neg {
+  color: #ef4444;
+  font-weight: 600;
+}
+.ticker-var-neu {
+  color: var(--text3);
+}
+.ticker-loading {
+  font-size: 11px;
+  color: var(--text3);
+  padding: 0 20px;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  grid-template-rows: 32px 1fr;
+  min-height: 100vh;
+}
+.ticker-bar { grid-row: 1; grid-column: 1 / -1; }
+.sidebar    { grid-row: 2; grid-column: 1; }
+.main       { grid-row: 2; grid-column: 2; }
