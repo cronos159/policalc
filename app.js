@@ -223,6 +223,15 @@ function showApp() {
             <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none"/>
           </svg>
           Timeline
+        </div>
+        <div class="nav-item" onclick="goPage('crm')">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="6" cy="5" r="2.5"/>
+            <path d="M1,13 C1,10.5 3.2,8.5 6,8.5 C8.8,8.5 11,10.5 11,13"/>
+            <line x1="13" y1="5" x2="13" y2="9"/>
+            <line x1="11" y1="7" x2="15" y2="7"/>
+          </svg>
+          CRM
         </div>`
     }
   }
@@ -237,7 +246,7 @@ function updateClock() {
 
 function goPage(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
-  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5, 'admin': 6, 'timeline': 7 }[page]
+  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5, 'admin': 6, 'timeline': 7, 'crm': 8 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
   if (page === 'matriz') renderMatriz()
   else if (page === 'contratos') renderContratos()
@@ -247,6 +256,7 @@ function goPage(page) {
   else if (page === 'alertas') renderAlertas()
   else if (page === 'admin') renderAdmin()
   else if (page === 'timeline') renderTimeline()
+  else if (page === 'crm') renderCRM()
 }
 
 // ════ HELPER CENTRAL — parsea componentes sin importar el formato ════
@@ -3070,4 +3080,515 @@ async function renderTimeline() {
   }
 
   document.getElementById('page-content').innerHTML = html
+}
+
+// ════════════════════════════════════════════════════════════════
+// CRM ENTERPRISE — Gestión de clientes nivel premium
+// ════════════════════════════════════════════════════════════════
+
+let crmOrgActual = null
+
+async function renderCRM() {
+  if (currentUser.rol !== 'superadmin') {
+    document.getElementById('page-content').innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">Acceso restringido</div>`
+    return
+  }
+
+  const { data: orgs } = await sb.from('organizaciones').select('*').order('nombre')
+  const { data: interacciones } = await sb.from('crm_interacciones').select('*').order('fecha', { ascending: false }).limit(5)
+
+  // KPIs
+  const hoy = new Date()
+  const en7dias = new Date(hoy.getTime() + 7*24*60*60*1000).toISOString().slice(0,10)
+  const seguimientos = orgs?.filter(o => o.proximo_seguimiento && o.proximo_seguimiento <= en7dias).length || 0
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">CRM — Gestión de clientes</div>
+        <div class="page-sub">Historial, contactos, seguimientos e inteligencia comercial</div>
+      </div>
+      <button class="btn btn-accent" onclick="goPage('admin')">← Admin</button>
+    </div>
+
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Clientes totales</div>
+        <div style="font-size:36px;font-weight:800;color:var(--accent)">${orgs?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center;border-color:${seguimientos>0?'rgba(245,158,11,0.3)':'var(--border)'}">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">⏰ Seguimientos esta semana</div>
+        <div style="font-size:36px;font-weight:800;color:${seguimientos>0?'#f59e0b':'var(--text3)'}">${seguimientos}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Interacciones totales</div>
+        <div style="font-size:36px;font-weight:800;color:#6366f1">${interacciones?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Cuentas premium</div>
+        <div style="font-size:36px;font-weight:800;color:#4ade80">${orgs?.filter(o=>o.nivel_cuenta==='premium').length || 0}</div>
+      </div>
+    </div>
+
+    <!-- Lista de clientes -->
+    <div class="card">
+      <div class="card-title">Clientes</div>
+      <div style="display:grid;gap:10px">
+  `
+
+  orgs?.forEach(org => {
+    const nivelColor = { premium: '#f59e0b', enterprise: '#6366f1', standard: '#94a3b8' }
+    const color = nivelColor[org.nivel_cuenta] || '#94a3b8'
+    const diasSinContacto = org.ultima_interaccion
+      ? Math.floor((hoy - new Date(org.ultima_interaccion)) / (1000*60*60*24))
+      : null
+    const alertaSeguimiento = org.proximo_seguimiento && org.proximo_seguimiento <= en7dias
+
+    html += `
+      <div onclick="abrirFichaCliente('${org.id}')"
+        style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;
+               background:var(--surface2);border:1px solid ${alertaSeguimiento?'rgba(245,158,11,0.3)':'var(--border)'};
+               border-radius:var(--radius);cursor:pointer;transition:all .2s"
+        onmouseover="this.style.borderColor='var(--border2)';this.style.transform='translateX(2px)'"
+        onmouseout="this.style.borderColor='${alertaSeguimiento?'rgba(245,158,11,0.3)':'var(--border)'}';this.style.transform='translateX(0)'">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:42px;height:42px;border-radius:10px;background:${color}15;border:1px solid ${color}33;
+                      display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:${color}">
+            ${org.nombre.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+              <span style="font-size:14px;font-weight:600">${org.nombre}</span>
+              <span style="font-size:10px;padding:1px 7px;border-radius:99px;background:${color}15;color:${color};border:1px solid ${color}33;text-transform:uppercase;letter-spacing:0.5px">${org.nivel_cuenta || 'standard'}</span>
+              ${alertaSeguimiento ? '<span style="font-size:10px;color:#f59e0b">⏰ Seguimiento pendiente</span>' : ''}
+            </div>
+            <div style="font-size:12px;color:var(--text3)">
+              ${org.sector ? org.sector + ' · ' : ''}
+              ${org.email_contacto || '—'}
+              ${diasSinContacto !== null ? ` · Último contacto: hace ${diasSinContacto}d` : ' · Sin interacciones'}
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:2px">Score relación</div>
+            <div style="font-size:18px;font-weight:700;color:${(org.score_relacion||50)>70?'#4ade80':(org.score_relacion||50)>40?'#f59e0b':'#ef4444'}">${org.score_relacion || 50}</div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--text3)" stroke-width="1.5"><polyline points="6,4 10,8 6,12"/></svg>
+        </div>
+      </div>`
+  })
+
+  html += `</div></div>`
+  document.getElementById('page-content').innerHTML = html
+}
+
+async function abrirFichaCliente(orgId) {
+  const { data: org } = await sb.from('organizaciones').select('*').eq('id', orgId).single()
+  const { data: contactos } = await sb.from('crm_contactos').select('*').eq('org_id', orgId).order('es_principal', { ascending: false })
+  const { data: interacciones } = await sb.from('crm_interacciones').select('*').eq('org_id', orgId).order('fecha', { ascending: false })
+  const { data: notas } = await sb.from('crm_notas').select('*').eq('org_id', orgId).order('created_at', { ascending: false })
+  const { data: contratos } = await sb.from('contratos').select('*, formulas(nombre)').eq('org_id', orgId)
+
+  crmOrgActual = org
+
+  const TIPO_ICON = { llamada:'📞', reunion:'🤝', email:'📧', whatsapp:'💬', visita:'🏢', otro:'📌' }
+  const RESULTADO_COLOR = { positivo:'#4ade80', neutro:'#f59e0b', pendiente:'#6366f1', negativo:'#ef4444' }
+
+  const hoy = new Date()
+
+  let html = `
+    <div class="page-head">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:48px;height:48px;border-radius:12px;background:var(--accent-dim);border:1px solid var(--accent);
+                    display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:var(--accent)">
+          ${org.nombre.charAt(0).toUpperCase()}
+        </div>
+        <div>
+          <div class="page-title">${org.nombre}</div>
+          <div class="page-sub">${org.sector || 'Sin sector'} · ${org.nivel_cuenta || 'standard'} · ${org.plan}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="renderCRM()">← Clientes</button>
+        <button class="btn btn-ghost btn-sm" onclick="editarFichaCliente('${orgId}')">✏️ Editar ficha</button>
+        <button class="btn btn-accent btn-sm" onclick="nuevaInteraccion('${orgId}')">+ Interacción</button>
+      </div>
+    </div>
+
+    <!-- Score y datos rápidos -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Score relación</div>
+        <div style="font-size:40px;font-weight:900;color:${(org.score_relacion||50)>70?'#4ade80':(org.score_relacion||50)>40?'#f59e0b':'#ef4444'}">${org.score_relacion || 50}</div>
+        <div style="font-size:10px;color:var(--text3)">/ 100</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Contratos</div>
+        <div style="font-size:36px;font-weight:800;color:var(--accent)">${contratos?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Interacciones</div>
+        <div style="font-size:36px;font-weight:800;color:#6366f1">${interacciones?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Próx. seguimiento</div>
+        <div style="font-size:14px;font-weight:700;color:${org.proximo_seguimiento && org.proximo_seguimiento <= new Date(hoy.getTime()+7*24*60*60*1000).toISOString().slice(0,10)?'#f59e0b':'var(--text)'}">
+          ${org.proximo_seguimiento ? new Date(org.proximo_seguimiento).toLocaleDateString('es-AR') : '—'}
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:16px">
+      <!-- Columna principal -->
+      <div>
+
+        <!-- Historial de interacciones -->
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div class="card-title" style="margin:0">📋 Historial de interacciones</div>
+            <button class="btn btn-accent btn-sm" onclick="nuevaInteraccion('${orgId}')">+ Nueva</button>
+          </div>
+          ${interacciones?.length === 0 ? `
+            <div style="text-align:center;padding:24px;color:var(--text3)">Sin interacciones registradas</div>` :
+          interacciones?.map(i => {
+            const icon = TIPO_ICON[i.tipo] || '📌'
+            const resColor = RESULTADO_COLOR[i.resultado] || '#94a3b8'
+            const fecha = new Date(i.fecha).toLocaleDateString('es-AR', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+            return `
+            <div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)">
+              <div style="width:38px;height:38px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);
+                          display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${icon}</div>
+              <div style="flex:1">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13px;font-weight:600;text-transform:capitalize">${i.tipo}</span>
+                    ${i.resultado ? `<span style="font-size:10px;padding:1px 7px;border-radius:99px;background:${resColor}15;color:${resColor};border:1px solid ${resColor}33">${i.resultado}</span>` : ''}
+                    ${i.duracion_min ? `<span style="font-size:11px;color:var(--text3)">⏱ ${i.duracion_min} min</span>` : ''}
+                  </div>
+                  <span style="font-size:11px;color:var(--text3)">${fecha}</span>
+                </div>
+                <div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:6px">${i.resumen}</div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="font-size:11px;color:var(--text3)">por ${i.usuario_nombre || '—'}</span>
+                  ${i.proximo_seguimiento ? `<span style="font-size:11px;color:#f59e0b">📅 Seguimiento: ${new Date(i.proximo_seguimiento).toLocaleDateString('es-AR')}</span>` : ''}
+                </div>
+              </div>
+              <button onclick="borrarInteraccion('${i.id}','${orgId}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;opacity:0.5;transition:opacity .2s"
+                onmouseover="this.style.opacity=1;this.style.color='#ef4444'" onmouseout="this.style.opacity=0.5;this.style.color='var(--text3)'">🗑</button>
+            </div>`
+          }).join('')}
+        </div>
+
+        <!-- Contratos vinculados -->
+        <div class="card">
+          <div class="card-title">📋 Contratos vinculados</div>
+          ${contratos?.length === 0 ? `<div style="text-align:center;padding:16px;color:var(--text3)">Sin contratos</div>` :
+          contratos?.map(c => {
+            const hasta = c.vigencia_hasta ? new Date(c.vigencia_hasta) : null
+            const dias = hasta ? Math.ceil((hasta - hoy) / (1000*60*60*24)) : null
+            const color = !dias ? '#94a3b8' : dias < 0 ? '#ef4444' : dias < 30 ? '#f59e0b' : '#4ade80'
+            return `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:13px;font-weight:500">${c.nombre}</div>
+                <div style="font-size:11px;color:var(--text3)">${c.formulas?.nombre || 'Sin fórmula'} · ${c.vigencia_hasta ? new Date(c.vigencia_hasta).toLocaleDateString('es-AR') : '—'}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:14px;font-weight:700;color:var(--accent)">$${Number(c.monto_base||0).toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+                <div style="font-size:11px;color:${color}">${dias === null ? '—' : dias < 0 ? 'Vencido' : dias < 30 ? `${dias}d restantes` : 'Activo'}</div>
+              </div>
+            </div>`
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- Columna lateral -->
+      <div>
+
+        <!-- Contactos -->
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div class="card-title" style="margin:0">👥 Contactos</div>
+            <button class="btn btn-ghost btn-sm" onclick="nuevoContacto('${orgId}')">+ Agregar</button>
+          </div>
+          ${contactos?.length === 0 ? `<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">Sin contactos cargados</div>` :
+          contactos?.map(c => `
+            <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div>
+                  <div style="font-size:13px;font-weight:500">${c.nombre} ${c.es_principal ? '⭐' : ''}</div>
+                  ${c.cargo ? `<div style="font-size:11px;color:var(--text3)">${c.cargo}</div>` : ''}
+                </div>
+                <button onclick="borrarContacto('${c.id}','${orgId}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px">🗑</button>
+              </div>
+              <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
+                ${c.telefono ? `<a href="tel:${c.telefono}" style="font-size:12px;color:var(--accent);text-decoration:none">📞 ${c.telefono}</a>` : ''}
+                ${c.whatsapp ? `<a href="https://wa.me/${c.whatsapp.replace(/\D/g,'')}" target="_blank" style="font-size:12px;color:#4ade80;text-decoration:none">💬 WhatsApp</a>` : ''}
+                ${c.email ? `<a href="mailto:${c.email}" style="font-size:12px;color:#6366f1;text-decoration:none">📧 ${c.email}</a>` : ''}
+                ${c.linkedin ? `<a href="${c.linkedin}" target="_blank" style="font-size:12px;color:#3b82f6;text-decoration:none">💼 LinkedIn</a>` : ''}
+              </div>
+            </div>`).join('')}
+        </div>
+
+        <!-- Notas internas -->
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div class="card-title" style="margin:0">📝 Notas internas</div>
+            <button class="btn btn-ghost btn-sm" onclick="nuevaNota('${orgId}')">+ Nota</button>
+          </div>
+          ${notas?.length === 0 ? `<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">Sin notas</div>` :
+          notas?.map(n => {
+            const fecha = new Date(n.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'short'})
+            return `
+            <div style="padding:10px;background:var(--surface2);border-radius:8px;margin-bottom:8px;border:1px solid var(--border)">
+              <div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:6px">${n.contenido}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:10px;color:var(--text3)">${n.usuario_nombre || '—'} · ${fecha}</span>
+                <button onclick="borrarNota('${n.id}','${orgId}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px">🗑</button>
+              </div>
+            </div>`
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `
+
+  document.getElementById('page-content').innerHTML = html
+}
+
+function editarFichaCliente(orgId) {
+  const org = crmOrgActual
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:500px;border:1px solid var(--border);max-height:85vh;overflow-y:auto">
+      <h3 style="margin-bottom:20px;font-size:16px;font-weight:600">Editar ficha — ${org.nombre}</h3>
+      <div class="grid-2">
+        <div class="input-group"><label>Sector / Industria</label><input type="text" id="fe-sector" value="${org.sector||''}" placeholder="Oil & Gas, Construcción..."/></div>
+        <div class="input-group"><label>Nivel de cuenta</label>
+          <select id="fe-nivel">
+            <option value="standard" ${org.nivel_cuenta==='standard'?'selected':''}>Standard</option>
+            <option value="premium" ${org.nivel_cuenta==='premium'?'selected':''}>Premium</option>
+            <option value="enterprise" ${org.nivel_cuenta==='enterprise'?'selected':''}>Enterprise</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Sitio web</label><input type="text" id="fe-web" value="${org.sitio_web||''}" placeholder="https://..."/></div>
+        <div class="input-group"><label>Dirección</label><input type="text" id="fe-dir" value="${org.direccion||''}" placeholder="Ciudad, Provincia"/></div>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Próximo seguimiento</label><input type="date" id="fe-seg" value="${org.proximo_seguimiento||''}"/></div>
+        <div class="input-group"><label>Score relación (0-100)</label><input type="number" id="fe-score" value="${org.score_relacion||50}" min="0" max="100"/></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="guardarFichaCliente('${orgId}')">Guardar</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function guardarFichaCliente(orgId) {
+  const { error } = await sb.from('organizaciones').update({
+    sector: document.getElementById('fe-sector').value.trim(),
+    nivel_cuenta: document.getElementById('fe-nivel').value,
+    sitio_web: document.getElementById('fe-web').value.trim(),
+    direccion: document.getElementById('fe-dir').value.trim(),
+    proximo_seguimiento: document.getElementById('fe-seg').value || null,
+    score_relacion: parseInt(document.getElementById('fe-score').value) || 50
+  }).eq('id', orgId)
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  document.getElementById('modal-overlay').remove()
+  toast('Ficha actualizada ✓', 'success')
+  await registrarAuditoria('editó ficha CRM', 'cliente', orgId, crmOrgActual?.nombre)
+  abrirFichaCliente(orgId)
+}
+
+function nuevaInteraccion(orgId) {
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center'
+  const ahora = new Date().toISOString().slice(0,16)
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:520px;border:1px solid var(--border);max-height:85vh;overflow-y:auto">
+      <h3 style="margin-bottom:20px;font-size:16px;font-weight:600">Nueva interacción</h3>
+      <div class="grid-2">
+        <div class="input-group"><label>Tipo *</label>
+          <select id="ni-tipo">
+            <option value="llamada">📞 Llamada</option>
+            <option value="reunion">🤝 Reunión</option>
+            <option value="email">📧 Email</option>
+            <option value="whatsapp">💬 WhatsApp</option>
+            <option value="visita">🏢 Visita</option>
+            <option value="otro">📌 Otro</option>
+          </select>
+        </div>
+        <div class="input-group"><label>Fecha y hora *</label><input type="datetime-local" id="ni-fecha" value="${ahora}"/></div>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Duración (minutos)</label><input type="number" id="ni-dur" placeholder="30" min="1"/></div>
+        <div class="input-group"><label>Resultado</label>
+          <select id="ni-resultado">
+            <option value="">Sin resultado</option>
+            <option value="positivo">✅ Positivo</option>
+            <option value="neutro">➖ Neutro</option>
+            <option value="pendiente">⏳ Pendiente</option>
+            <option value="negativo">❌ Negativo</option>
+          </select>
+        </div>
+      </div>
+      <div class="input-group"><label>Resumen de la interacción *</label>
+        <textarea id="ni-resumen" rows="3" placeholder="¿De qué se habló? ¿Qué se acordó?" style="width:100%;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-family:inherit;font-size:13px"></textarea>
+      </div>
+      <div class="input-group"><label>Próximo seguimiento</label><input type="date" id="ni-seg"/></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="guardarInteraccion('${orgId}')">Guardar interacción</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function guardarInteraccion(orgId) {
+  const resumen = document.getElementById('ni-resumen').value.trim()
+  const fecha = document.getElementById('ni-fecha').value
+  if (!resumen || !fecha) { toast('Completá el resumen y la fecha', 'warn'); return }
+
+  const proxSeg = document.getElementById('ni-seg').value
+  const { error } = await sb.from('crm_interacciones').insert({
+    org_id: orgId,
+    usuario_id: currentUser.id,
+    usuario_nombre: currentUser.nombre || currentUser.email,
+    tipo: document.getElementById('ni-tipo').value,
+    fecha: new Date(fecha).toISOString(),
+    duracion_min: parseInt(document.getElementById('ni-dur').value) || null,
+    resumen,
+    resultado: document.getElementById('ni-resultado').value || null,
+    proximo_seguimiento: proxSeg || null,
+    prioridad: 'media'
+  })
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+
+  // Actualizar ultima_interaccion y proximo_seguimiento en org
+  await sb.from('organizaciones').update({
+    ultima_interaccion: new Date().toISOString().slice(0,10),
+    ...(proxSeg ? { proximo_seguimiento: proxSeg } : {})
+  }).eq('id', orgId)
+
+  await registrarAuditoria('registró interacción', 'cliente', orgId, crmOrgActual?.nombre, { tipo: document.getElementById('ni-tipo').value })
+  document.getElementById('modal-overlay').remove()
+  toast('Interacción guardada ✓', 'success')
+  abrirFichaCliente(orgId)
+}
+
+async function borrarInteraccion(id, orgId) {
+  if (!confirm('¿Borrar esta interacción?')) return
+  await sb.from('crm_interacciones').delete().eq('id', id)
+  toast('Interacción eliminada', 'success')
+  abrirFichaCliente(orgId)
+}
+
+function nuevoContacto(orgId) {
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:460px;border:1px solid var(--border)">
+      <h3 style="margin-bottom:20px;font-size:16px;font-weight:600">Nuevo contacto</h3>
+      <div class="grid-2">
+        <div class="input-group"><label>Nombre completo *</label><input type="text" id="nc-nombre" placeholder="Juan García"/></div>
+        <div class="input-group"><label>Cargo / Puesto</label><input type="text" id="nc-cargo" placeholder="Gerente de Contratos"/></div>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Teléfono</label><input type="text" id="nc-tel" placeholder="+54 9 299..."/></div>
+        <div class="input-group"><label>WhatsApp</label><input type="text" id="nc-wa" placeholder="+54 9 299..."/></div>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Email</label><input type="email" id="nc-email" placeholder="juan@empresa.com"/></div>
+        <div class="input-group"><label>LinkedIn</label><input type="text" id="nc-li" placeholder="https://linkedin.com/in/..."/></div>
+      </div>
+      <div class="input-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="nc-principal"/> Contacto principal de la cuenta
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="guardarContacto('${orgId}')">Guardar contacto</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function guardarContacto(orgId) {
+  const nombre = document.getElementById('nc-nombre').value.trim()
+  if (!nombre) { toast('Ingresá el nombre', 'warn'); return }
+  const { error } = await sb.from('crm_contactos').insert({
+    org_id: orgId,
+    nombre,
+    cargo: document.getElementById('nc-cargo').value.trim(),
+    telefono: document.getElementById('nc-tel').value.trim(),
+    whatsapp: document.getElementById('nc-wa').value.trim(),
+    email: document.getElementById('nc-email').value.trim(),
+    linkedin: document.getElementById('nc-li').value.trim(),
+    es_principal: document.getElementById('nc-principal').checked
+  })
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  document.getElementById('modal-overlay').remove()
+  toast('Contacto guardado ✓', 'success')
+  abrirFichaCliente(orgId)
+}
+
+async function borrarContacto(id, orgId) {
+  if (!confirm('¿Borrar este contacto?')) return
+  await sb.from('crm_contactos').delete().eq('id', id)
+  toast('Contacto eliminado', 'success')
+  abrirFichaCliente(orgId)
+}
+
+function nuevaNota(orgId) {
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:440px;border:1px solid var(--border)">
+      <h3 style="margin-bottom:16px;font-size:16px;font-weight:600">Nueva nota interna</h3>
+      <textarea id="nn-contenido" rows="4" placeholder="Escribí tu nota aquí..."
+        style="width:100%;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px;color:var(--text);font-family:inherit;font-size:13px;margin-bottom:14px"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="guardarNota('${orgId}')">Guardar nota</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function guardarNota(orgId) {
+  const contenido = document.getElementById('nn-contenido').value.trim()
+  if (!contenido) { toast('Escribí algo en la nota', 'warn'); return }
+  const { error } = await sb.from('crm_notas').insert({
+    org_id: orgId,
+    usuario_id: currentUser.id,
+    usuario_nombre: currentUser.nombre || currentUser.email,
+    contenido, privada: true
+  })
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  document.getElementById('modal-overlay').remove()
+  toast('Nota guardada ✓', 'success')
+  abrirFichaCliente(orgId)
+}
+
+async function borrarNota(id, orgId) {
+  if (!confirm('¿Borrar esta nota?')) return
+  await sb.from('crm_notas').delete().eq('id', id)
+  toast('Nota eliminada', 'success')
+  abrirFichaCliente(orgId)
 }
