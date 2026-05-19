@@ -2583,26 +2583,41 @@ async function calcularContratoCompleto() {
     }
   }
 
-  // Calcular ítems actualizados
+  // Calcular ítems actualizados — siempre muestra diferencia real por ítem
   const moneda = contratoEditando.moneda === 'USD' ? 'USD' : '$'
   const itemsActualizados = itemsContratoActual.map(item => {
+    // Siempre calcular con varAcum (variación real) para mostrar la diferencia
+    const montoActualizadoReal = item.monto_base * (1 + varAcum/100)
+    // Monto que se aplica según gatillo
     const montoActualizado = item.monto_base * (1 + varAplicada/100)
     const diferencia = montoActualizado - item.monto_base
-    return { ...item, montoActualizado, diferencia }
+    const diferenciaReal = montoActualizadoReal - item.monto_base
+    return { ...item, montoActualizado, diferencia, montoActualizadoReal, diferenciaReal }
   })
 
   const totalBase = itemsActualizados.reduce((s, i) => s + i.monto_base, 0)
   const totalActualizado = itemsActualizados.reduce((s, i) => s + i.montoActualizado, 0)
   const totalDif = totalActualizado - totalBase
 
-  // Render resultado
-  const filasItems = itemsActualizados.map(item => `
-    <tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:12px 16px">${item.descripcion}</td>
-      <td style="padding:12px 16px;text-align:right">${moneda} ${item.monto_base.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-      <td style="padding:12px 16px;text-align:right;color:var(--accent);font-weight:600">${moneda} ${item.montoActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-      <td style="padding:12px 16px;text-align:right;color:${item.diferencia>=0?'#4ade80':'#f87171'};font-weight:500">
-        ${item.diferencia>=0?'+':''}${moneda} ${item.diferencia.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+  // Render con checkboxes por ítem
+  const filasItems = itemsActualizados.map((item, idx) => `
+    <tr style="border-bottom:1px solid var(--border)" id="fila-item-${idx}">
+      <td style="padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="chk-item-${idx}" checked
+            onchange="recalcularTotalItems()"
+            style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"/>
+          <label for="chk-item-${idx}" style="cursor:pointer;font-size:13px;color:var(--text);text-transform:none;letter-spacing:0;font-weight:400">${item.descripcion}</label>
+        </div>
+      </td>
+      <td style="padding:12px 16px;text-align:right" data-base="${item.monto_base}">
+        ${moneda} ${item.monto_base.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+      </td>
+      <td style="padding:12px 16px;text-align:right;color:var(--accent);font-weight:600" data-actualizado="${item.montoActualizadoReal}">
+        ${moneda} ${item.montoActualizadoReal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+      </td>
+      <td style="padding:12px 16px;text-align:right;font-weight:600;color:${item.diferenciaReal>=0?'#4ade80':'#f87171'}" data-dif="${item.diferenciaReal}">
+        ${item.diferenciaReal>=0?'+':''}${moneda} ${item.diferenciaReal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}
       </td>
     </tr>`).join('')
 
@@ -2644,19 +2659,24 @@ async function calcularContratoCompleto() {
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:var(--card-bg)">
-              <th style="padding:10px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Ítem</th>
+              <th style="padding:10px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:uppercase;letter-spacing:1px">
+                  <input type="checkbox" checked onchange="toggleTodosItems(this)" style="accent-color:var(--accent);width:14px;height:14px"/>
+                  Ítem
+                </label>
+              </th>
               <th style="padding:10px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Precio base</th>
-              <th style="padding:10px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Precio actualizado</th>
+              <th style="padding:10px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Precio actualizado <span style="color:var(--accent)">(+${varAcum.toFixed(2)}%)</span></th>
               <th style="padding:10px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Diferencia</th>
             </tr>
           </thead>
           <tbody>
             ${filasItems}
-            <tr style="background:var(--card-bg);font-weight:700;border-top:2px solid var(--border)">
-              <td style="padding:12px 16px">TOTAL</td>
-              <td style="padding:12px 16px;text-align:right">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-              <td style="padding:12px 16px;text-align:right;color:var(--accent)">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-              <td style="padding:12px 16px;text-align:right;color:${totalDif>=0?'#4ade80':'#f87171'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+            <tr style="background:var(--surface3);font-weight:700;border-top:2px solid var(--border)" id="fila-total">
+              <td style="padding:12px 16px;font-size:13px">TOTAL SELECCIONADO</td>
+              <td style="padding:12px 16px;text-align:right" id="total-base-display">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              <td style="padding:12px 16px;text-align:right;color:var(--accent)" id="total-act-display">${moneda} ${(totalBase*(1+varAcum/100)).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              <td style="padding:12px 16px;text-align:right;color:#4ade80" id="total-dif-display">+${moneda} ${(totalBase*(1+varAcum/100)-totalBase).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
             </tr>
           </tbody>
         </table>
@@ -4085,6 +4105,34 @@ async function renderDashboard() {
   `
 
   document.getElementById('page-content').innerHTML = html
+}
+
+// ════ ITEMS SELECCIONABLES ════
+function recalcularTotalItems() {
+  const filas = document.querySelectorAll('[id^="fila-item-"]')
+  let sumBase = 0, sumAct = 0, sumDif = 0
+  filas.forEach((fila, idx) => {
+    const chk = document.getElementById(`chk-item-${idx}`)
+    if (chk?.checked) {
+      sumBase += parseFloat(fila.querySelector('[data-base]')?.dataset.base || 0)
+      sumAct += parseFloat(fila.querySelector('[data-actualizado]')?.dataset.actualizado || 0)
+      sumDif += parseFloat(fila.querySelector('[data-dif]')?.dataset.dif || 0)
+    }
+  })
+  const fmt = (n) => n.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})
+  const moneda = window._contratoCalculo?.moneda === 'USD' ? 'USD' : '$'
+  const tb = document.getElementById('total-base-display')
+  const ta = document.getElementById('total-act-display')
+  const td = document.getElementById('total-dif-display')
+  if (tb) tb.textContent = `${moneda} ${fmt(sumBase)}`
+  if (ta) { ta.textContent = `${moneda} ${fmt(sumAct)}`; ta.style.color = 'var(--accent)' }
+  if (td) { td.textContent = `${sumDif>=0?'+':''}${moneda} ${fmt(sumDif)}`; td.style.color = sumDif>=0?'#4ade80':'#f87171' }
+}
+
+function toggleTodosItems(masterChk) {
+  const filas = document.querySelectorAll('[id^="chk-item-"]')
+  filas.forEach(chk => { chk.checked = masterChk.checked })
+  recalcularTotalItems()
 }
 
 // PoliCalc v2.1 — Build 20260519
