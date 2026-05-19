@@ -171,6 +171,24 @@ async function loadIndicesValores() {
   })
 }
 
+// ════ AUDITORÍA — Registrar eventos ════
+async function registrarAuditoria(accion, entidad, entidad_id, entidad_nombre, detalle = {}) {
+  try {
+    await sb.from('auditoria').insert({
+      org_id: currentOrg.id,
+      usuario_id: currentUser.id,
+      usuario_nombre: currentUser.nombre || currentUser.email,
+      accion,
+      entidad,
+      entidad_id: entidad_id || null,
+      entidad_nombre: entidad_nombre || null,
+      detalle
+    })
+  } catch (e) {
+    console.error('Error registrando auditoría:', e)
+  }
+}
+
 async function checkAlertas() {
   const { count } = await sb.from('alertas').select('*', { count: 'exact', head: true }).eq('org_id', currentOrg.id).eq('leida', false)
   const badge = document.getElementById('alertas-badge')
@@ -194,6 +212,17 @@ function showApp() {
             <circle cx="13" cy="4" r="1.5" fill="currentColor" stroke="none"/>
           </svg>
           Admin
+        </div>
+        <div class="nav-item" onclick="goPage('timeline')">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <line x1="2" y1="4" x2="14" y2="4"/>
+            <line x1="2" y1="8" x2="14" y2="8"/>
+            <line x1="2" y1="12" x2="10" y2="12"/>
+            <circle cx="5" cy="4" r="1.5" fill="currentColor" stroke="none"/>
+            <circle cx="9" cy="8" r="1.5" fill="currentColor" stroke="none"/>
+            <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+          </svg>
+          Timeline
         </div>`
     }
   }
@@ -208,7 +237,7 @@ function updateClock() {
 
 function goPage(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
-  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5, 'admin': 6 }[page]
+  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5, 'admin': 6, 'timeline': 7 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
   if (page === 'matriz') renderMatriz()
   else if (page === 'contratos') renderContratos()
@@ -217,6 +246,7 @@ function goPage(page) {
   else if (page === 'indices') renderIndices()
   else if (page === 'alertas') renderAlertas()
   else if (page === 'admin') renderAdmin()
+  else if (page === 'timeline') renderTimeline()
 }
 
 // ════ HELPER CENTRAL — parsea componentes sin importar el formato ════
@@ -852,6 +882,7 @@ async function guardarFormula() {
 
   if (error) { toast('Error: ' + error.message, 'error'); return }
 
+  await registrarAuditoria('creó', 'formula', null, nombre, { componentes })
   toast('Fórmula guardada ✓', 'success')
   await loadFormulas()
   renderFormulas()
@@ -1041,6 +1072,7 @@ async function guardarIndiceManual() {
   document.getElementById('m-valor').value = ''
   await loadIndicesValores()
   renderIndices()
+  await registrarAuditoria('cargó índice', 'indice', null, `${codigo} ${periodo}`, { valor })
   toast(`${codigo} ${periodo} guardado ✓`, 'success')
 }
 
@@ -2229,6 +2261,11 @@ async function guardarContratoCompleto() {
   }
 
   await loadContratos()
+  await registrarAuditoria(
+    contratoEditando ? 'editó' : 'creó',
+    'contrato', contratoId, payload.nombre,
+    { monto: payload.monto_base, formula_id: payload.formula_id }
+  )
   toast('Contrato guardado ✓', 'success')
   
   // Recargar para ver el botón calcular
@@ -2882,4 +2919,155 @@ async function guardarOrg(orgId) {
   document.getElementById('modal-overlay').remove()
   toast('Organización actualizada ✓', 'success')
   renderAdmin()
+}
+
+// ════════════════════════════════════════════════════════════════
+// TIMELINE OPERACIONAL — Panel de auditoría
+// ════════════════════════════════════════════════════════════════
+
+async function renderTimeline() {
+  if (currentUser.rol !== 'superadmin') {
+    document.getElementById('page-content').innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">Acceso restringido</div>`
+    return
+  }
+
+  const { data: eventos } = await sb
+    .from('auditoria')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  const ACCION_CONFIG = {
+    'creó':           { icon: '✨', color: '#4ade80', label: 'Creación'  },
+    'editó':          { icon: '✏️', color: '#f59e0b', label: 'Edición'   },
+    'eliminó':        { icon: '🗑',  color: '#ef4444', label: 'Eliminación'},
+    'cargó índice':   { icon: '📊', color: '#6366f1', label: 'Índice'    },
+    'guardó cálculo': { icon: '💾', color: '#3b82f6', label: 'Cálculo'   },
+    'default':        { icon: '🔔', color: '#94a3b8', label: 'Evento'    },
+  }
+
+  const ENTIDAD_ICON = {
+    'contrato': '📋',
+    'formula':  '⚙️',
+    'indice':   '📈',
+    'calculo':  '🧮',
+    'usuario':  '👤',
+    'default':  '📌',
+  }
+
+  // Agrupar por día
+  const porDia = {}
+  eventos?.forEach(e => {
+    const dia = new Date(e.created_at).toLocaleDateString('es-AR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })
+    if (!porDia[dia]) porDia[dia] = []
+    porDia[dia].push(e)
+  })
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Timeline operacional</div>
+        <div class="page-sub">Registro de todas las acciones del sistema</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="renderTimeline()">↻ Actualizar</button>
+        <button class="btn btn-ghost btn-sm" onclick="goPage('admin')">← Admin</button>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Eventos hoy</div>
+        <div style="font-size:32px;font-weight:800;color:var(--accent)">
+          ${eventos?.filter(e => new Date(e.created_at).toDateString() === new Date().toDateString()).length || 0}
+        </div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Total eventos</div>
+        <div style="font-size:32px;font-weight:800;color:var(--text2)">${eventos?.length || 0}</div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Usuarios activos</div>
+        <div style="font-size:32px;font-weight:800;color:#4ade80">
+          ${new Set(eventos?.map(e => e.usuario_id)).size || 0}
+        </div>
+      </div>
+      <div class="card" style="padding:16px;text-align:center">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">Índices cargados</div>
+        <div style="font-size:32px;font-weight:800;color:#6366f1">
+          ${eventos?.filter(e => e.accion === 'cargó índice').length || 0}
+        </div>
+      </div>
+    </div>
+  `
+
+  if (!eventos || eventos.length === 0) {
+    html += `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="font-size:40px;margin-bottom:12px">📭</div>
+        <div style="font-size:16px;font-weight:500;margin-bottom:8px">Sin eventos registrados</div>
+        <div style="color:var(--text3);font-size:13px">Los eventos aparecerán aquí cuando los usuarios empiecen a usar la plataforma</div>
+      </div>`
+  } else {
+    html += `<div style="position:relative">`
+
+    Object.entries(porDia).forEach(([dia, evs]) => {
+      // Capitalizar día
+      const diaCapital = dia.charAt(0).toUpperCase() + dia.slice(1)
+
+      html += `
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;margin-top:8px">
+          <div style="height:1px;flex:1;background:var(--border)"></div>
+          <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;padding:4px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:99px">${diaCapital}</span>
+          <div style="height:1px;flex:1;background:var(--border)"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">`
+
+      evs.forEach(e => {
+        const cfg = ACCION_CONFIG[e.accion] || ACCION_CONFIG.default
+        const entIcon = ENTIDAD_ICON[e.entidad] || ENTIDAD_ICON.default
+        const hora = new Date(e.created_at).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' })
+        
+        // Formatear detalle
+        let detalleStr = ''
+        if (e.detalle) {
+          if (e.detalle.monto) detalleStr += `Monto: $${Number(e.detalle.monto).toLocaleString('es-AR')} `
+          if (e.detalle.valor) detalleStr += `Valor: ${e.detalle.valor} `
+          if (e.detalle.ajuste_acumulado) detalleStr += `Ajuste: ${Number(e.detalle.ajuste_acumulado).toFixed(2)}% `
+          if (e.detalle.monto_final) detalleStr += `→ $${Number(e.detalle.monto_final).toLocaleString('es-AR')}`
+        }
+
+        html += `
+          <div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);transition:all .2s"
+            onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
+            
+            <!-- Ícono acción -->
+            <div style="width:36px;height:36px;border-radius:50%;background:${cfg.color}15;border:1px solid ${cfg.color}33;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
+              ${cfg.icon}
+            </div>
+
+            <!-- Contenido -->
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+                <span style="font-weight:600;font-size:13px">${e.usuario_nombre || 'Sistema'}</span>
+                <span style="font-size:12px;color:var(--text3)">${e.accion}</span>
+                <span style="font-size:12px">${entIcon}</span>
+                <span style="font-size:12px;font-weight:500;color:${cfg.color}">${e.entidad_nombre || e.entidad}</span>
+              </div>
+              ${detalleStr ? `<div style="font-size:11px;color:var(--text3);background:var(--surface2);padding:4px 8px;border-radius:4px;display:inline-block">${detalleStr.trim()}</div>` : ''}
+            </div>
+
+            <!-- Hora -->
+            <div style="font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0">${hora}</div>
+          </div>`
+      })
+
+      html += `</div>`
+    })
+
+    html += `</div>`
+  }
+
+  document.getElementById('page-content').innerHTML = html
 }
