@@ -19,10 +19,31 @@
 </div>
 <!-- App shell -->
 <div class="shell" id="app-shell" style="display:none">
-  <!-- TICKER FINANCIERO -->
-  <div class="ticker-bar">
-    <div class="ticker-track" id="ticker-track">
-      <span class="ticker-loading">Cargando índices...</span>
+  <!-- TICKER TRADINGVIEW -->
+  <div class="ticker-bar" style="height:46px;overflow:hidden">
+    <div class="tradingview-widget-container" style="height:46px">
+      <div class="tradingview-widget-container__widget"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+      {
+        "symbols": [
+          {"proName":"FOREXCOM:SPXUSD","title":"S&P 500"},
+          {"proName":"FOREXCOM:NSXUSD","title":"Nasdaq"},
+          {"description":"Oro","proName":"CAPITALCOM:GOLD"},
+          {"description":"Petróleo WTI","proName":"NYMEX:CL1!"},
+          {"description":"Petróleo Brent","proName":"TVC:USOIL"},
+          {"description":"Plata","proName":"TVC:SILVER"},
+          {"description":"Dólar Index","proName":"TVC:DXY"},
+          {"description":"Bitcoin","proName":"BITSTAMP:BTCUSD"},
+          {"description":"YPF","proName":"NYSE:YPF"},
+          {"description":"Merval","proName":"BCBA:IMV"}
+        ],
+        "showSymbolLogo": true,
+        "isTransparent": true,
+        "displayMode": "adaptive",
+        "colorTheme": "dark",
+        "locale": "es"
+      }
+      </script>
     </div>
   </div>
   <aside class="sidebar">
