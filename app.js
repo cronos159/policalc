@@ -171,6 +171,41 @@ async function loadIndicesValores() {
   })
 }
 
+// ════ AUTOGUARDADO Y PROTECCIÓN DE FORMULARIO ════
+function marcarSucio() {
+  formularioSucio = true
+  // Autoguardar borrador cada vez que cambia un campo
+  clearTimeout(window._autoguardadoTimer)
+  window._autoguardadoTimer = setTimeout(() => {
+    const borrador = {
+      nombre: document.getElementById('c-nombre')?.value || '',
+      nro: document.getElementById('c-nro')?.value || '',
+      proveedor: document.getElementById('c-proveedor')?.value || '',
+      actividad: document.getElementById('c-actividad')?.value || '',
+      gestor: document.getElementById('c-gestor')?.value || '',
+      monto: document.getElementById('c-monto')?.value || '',
+      desde: document.getElementById('c-desde')?.value || '',
+      hasta: document.getElementById('c-hasta')?.value || '',
+      timestamp: new Date().toISOString()
+    }
+    localStorage.setItem('policalc_borrador_contrato', JSON.stringify(borrador))
+    
+    // Mostrar indicador de autoguardado
+    const indicator = document.getElementById('autosave-indicator')
+    if (indicator) {
+      indicator.textContent = '✓ Borrador guardado ' + new Date().toLocaleTimeString('es-AR', {hour:'2-digit',minute:'2-digit'})
+      indicator.style.color = '#4ade80'
+      setTimeout(() => { if(indicator) indicator.style.color = 'var(--text3)' }, 2000)
+    }
+  }, 800)
+}
+
+function recuperarBorrador() {
+  const raw = localStorage.getItem('policalc_borrador_contrato')
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch { return null }
+}
+
 // ════ AUDITORÍA — Registrar eventos ════
 async function registrarAuditoria(accion, entidad, entidad_id, entidad_nombre, detalle = {}) {
   try {
@@ -236,7 +271,7 @@ function showApp() {
     }
   }
 
-  goPage('matriz')
+  goPage('dashboard')
 }
 
 function updateClock() {
@@ -245,10 +280,20 @@ function updateClock() {
 }
 
 function goPage(page) {
+  // Advertir si hay formulario con cambios sin guardar
+  if (formularioSucio) {
+    const confirmar = confirm('⚠️ Tenés cambios sin guardar.\n\n¿Querés salir de todas formas? Se perderán los datos no guardados.')
+    if (!confirmar) return
+    formularioSucio = false
+    borradorContrato = null
+    localStorage.removeItem('policalc_borrador_contrato')
+  }
+
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
-  const idx = { 'matriz': 0, 'contratos': 1, 'hist': 2, 'form': 3, 'indices': 4, 'alertas': 5, 'admin': 6, 'timeline': 7, 'crm': 8 }[page]
+  const idx = { 'dashboard': 0, 'matriz': 1, 'contratos': 2, 'hist': 3, 'form': 4, 'indices': 5, 'alertas': 6, 'admin': 7, 'timeline': 8, 'crm': 9 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
-  if (page === 'matriz') renderMatriz()
+  if (page === 'dashboard') renderDashboard()
+  else if (page === 'matriz') renderMatriz()
   else if (page === 'contratos') renderContratos()
   else if (page === 'hist') renderHistorial()
   else if (page === 'form') renderFormulas()
@@ -1385,7 +1430,9 @@ async function guardarContrato() {
     }).select().single()
     if (error) { toast('Error: ' + error.message, 'error'); return }
     contratoActual = data
-    toast('Contrato guardado ✓', 'success')
+    formularioSucio = false
+  localStorage.removeItem('policalc_borrador_contrato')
+  toast('Contrato guardado ✓', 'success')
   }
 
   await loadContratos()
@@ -1993,6 +2040,33 @@ async function exportarInformeRapido(id) {
 function abrirNuevoContrato() {
   contratoEditando = null
   itemsContratoActual = []
+  
+  // Verificar si hay borrador guardado
+  const borrador = recuperarBorrador()
+  if (borrador) {
+    const hace = Math.round((new Date() - new Date(borrador.timestamp)) / 60000)
+    const restaurar = confirm(`📋 Encontramos un borrador guardado hace ${hace} minuto${hace!==1?'s':''}.\n\nNombre: "${borrador.nombre || 'sin nombre'}"\n\n¿Querés restaurarlo?`)
+    if (restaurar) {
+      mostrarFormContrato()
+      setTimeout(() => {
+        if(document.getElementById('c-nombre')) document.getElementById('c-nombre').value = borrador.nombre || ''
+        if(document.getElementById('c-nro')) document.getElementById('c-nro').value = borrador.nro || ''
+        if(document.getElementById('c-proveedor')) document.getElementById('c-proveedor').value = borrador.proveedor || ''
+        if(document.getElementById('c-actividad')) document.getElementById('c-actividad').value = borrador.actividad || ''
+        if(document.getElementById('c-gestor')) document.getElementById('c-gestor').value = borrador.gestor || ''
+        if(document.getElementById('c-monto')) document.getElementById('c-monto').value = borrador.monto || ''
+        if(document.getElementById('c-desde')) document.getElementById('c-desde').value = borrador.desde || ''
+        if(document.getElementById('c-hasta')) document.getElementById('c-hasta').value = borrador.hasta || ''
+        const indicator = document.getElementById('autosave-indicator')
+        if(indicator) indicator.textContent = '✓ Borrador restaurado'
+        formularioSucio = true
+      }, 100)
+      return
+    } else {
+      localStorage.removeItem('policalc_borrador_contrato')
+    }
+  }
+  
   mostrarFormContrato()
 }
 
@@ -2038,7 +2112,7 @@ function mostrarFormContrato() {
         </div>
         <div class="input-group" style="margin:0">
           <label>Nombre / Descripción *</label>
-          <input type="text" id="c-nombre" placeholder="Ej: EyP CN Serv campamento" value="${c?.nombre||''}"/>
+          <input type="text" id="c-nombre" placeholder="Ej: EyP CN Serv campamento" value="${c?.nombre||''}" oninput="marcarSucio()"/>
         </div>
         <div class="input-group" style="margin:0">
           <label>Proveedor</label>
@@ -2276,6 +2350,8 @@ async function guardarContratoCompleto() {
     'contrato', contratoId, payload.nombre,
     { monto: payload.monto_base, formula_id: payload.formula_id }
   )
+  formularioSucio = false
+  localStorage.removeItem('policalc_borrador_contrato')
   toast('Contrato guardado ✓', 'success')
   
   // Recargar para ver el botón calcular
@@ -2478,92 +2554,173 @@ function exportarInformeContrato() {
   if (!window._contratoCalculo) { toast('Calculá primero', 'warn'); return }
   const { contratoEditando: c, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula, moneda } = window._contratoCalculo
   const hoy = new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'long',year:'numeric'})
+  const componentes = parseComponentes(formula.componentes)
 
   const filasItems = itemsActualizados.map(i => `
     <tr>
-      <td>${i.descripcion}</td>
-      <td style="text-align:right">${moneda} ${i.monto_base.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-      <td style="text-align:right;color:#059669;font-weight:600">${moneda} ${i.montoActualizado.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-      <td style="text-align:right;color:${i.diferencia>=0?'#059669':'#dc2626'}">${i.diferencia>=0?'+':''}${moneda} ${i.diferencia.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+      <td style="padding:10px 14px">${i.descripcion}</td>
+      <td style="padding:10px 14px;text-align:right">${moneda} ${i.monto_base.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:10px 14px;text-align:right;color:#059669;font-weight:600">${moneda} ${i.montoActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:10px 14px;text-align:right;font-weight:600;color:${i.diferencia>=0?'#059669':'#dc2626'}">${i.diferencia>=0?'+':''}${moneda} ${i.diferencia.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+    </tr>`).join('')
+
+  const filasEvolucion = evolucion.map((e, idx) => {
+    const color = e.varMes >= 0 ? '#059669' : '#dc2626'
+    const bgRow = idx % 2 === 0 ? '#ffffff' : '#f8fafc'
+    return `
+    <tr style="background:${bgRow}">
+      <td style="padding:9px 14px;font-weight:500">${e.mes}</td>
+      <td style="padding:9px 14px;text-align:right;color:${color};font-weight:600">${e.varMes>=0?'+':''}${e.varMes.toFixed(3)}%</td>
+      <td style="padding:9px 14px;text-align:right;font-weight:700;color:${e.varAcum>=0?'#059669':'#dc2626'}">${e.varAcum>=0?'+':''}${e.varAcum.toFixed(3)}%</td>
+      <td style="padding:9px 14px;text-align:right;color:#1e293b">$ ${(totalBase*(1+e.varAcum/100)).toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
+    </tr>`
+  }).join('')
+
+  const filasIndices = componentes.map(comp => `
+    <tr>
+      <td style="padding:8px 14px;font-weight:500">${comp.codigo}</td>
+      <td style="padding:8px 14px;color:#475569">${INDICES_META[comp.codigo]?.label || comp.codigo}</td>
+      <td style="padding:8px 14px;text-align:center;font-weight:700;color:var(--accent,#e8ff47)">${comp.coef}%</td>
     </tr>`).join('')
 
   const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/>
-<title>PoliCalc — ${c.nombre}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PoliCalc — Informe ${c.nombre}</title>
 <style>
-* { box-sizing:border-box; margin:0; padding:0 }
-body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f8fafc; color:#1e293b; padding:40px 20px }
-.page { max-width:960px; margin:0 auto }
-table { width:100%; border-collapse:collapse }
-th,td { padding:10px 14px; border-bottom:1px solid #e2e8f0; font-size:13px }
-th { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#94a3b8; font-weight:600; background:#f8fafc; text-align:left }
-@media print { body{background:white;padding:0} .no-print{display:none} }
+  * { box-sizing:border-box; margin:0; padding:0 }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f1f5f9; color:#1e293b; padding:32px 16px }
+  .page { max-width:900px; margin:0 auto }
+  table { width:100%; border-collapse:collapse }
+  th { font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:#94a3b8; font-weight:700; background:#f8fafc; text-align:left; padding:10px 14px; border-bottom:2px solid #e2e8f0 }
+  td { border-bottom:1px solid #f1f5f9; font-size:13px; color:#334155 }
+  .section { background:white; border-radius:14px; border:1px solid #e2e8f0; margin-bottom:20px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06) }
+  .section-title { padding:16px 20px; border-bottom:1px solid #f1f5f9; font-size:13px; font-weight:700; color:#1e293b; display:flex; align-items:center; gap:8px; background:#fafafa }
+  @media print {
+    body { background:white; padding:0 }
+    .no-print { display:none !important }
+    .section { box-shadow:none; border:1px solid #e2e8f0 }
+    .page { max-width:100% }
+  }
 </style></head><body><div class="page">
 
-  <div style="background:linear-gradient(135deg,#1e293b,#334155);border-radius:16px;padding:36px 40px;margin-bottom:24px;color:white">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
-      <div>
-        <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px">PoliCalc — Actualización Contractual</div>
-        <div style="font-size:26px;font-weight:700;margin-bottom:4px">${c.nombre}</div>
-        ${c.nro_contrato ? `<div style="font-size:13px;color:#94a3b8">Contrato ${c.nro_contrato}</div>` : ''}
-        <div style="font-size:13px;color:#64748b;margin-top:6px">${c.proveedor||''} ${c.actividad?'· '+c.actividad:''}</div>
-        <div style="font-size:12px;color:#64748b;margin-top:4px">Fórmula: ${formula.nombre}</div>
+  <!-- HEADER EJECUTIVO -->
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f4c75 100%);border-radius:16px;padding:40px;margin-bottom:24px;color:white;position:relative;overflow:hidden">
+    <div style="position:absolute;top:0;right:0;width:300px;height:100%;background:linear-gradient(135deg,transparent,rgba(255,255,255,.03));pointer-events:none"></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:20px">
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8">PoliCalc</span>
+          <span style="width:4px;height:4px;border-radius:50%;background:#94a3b8"></span>
+          <span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8">Informe de Actualización Contractual</span>
+        </div>
+        <div style="font-size:30px;font-weight:800;letter-spacing:-0.5px;margin-bottom:8px">${c.nombre}</div>
+        ${c.nro_contrato ? `<div style="display:inline-block;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 10px;font-size:12px;color:#cbd5e1;margin-bottom:8px">Contrato N° ${c.nro_contrato}</div>` : ''}
+        <div style="font-size:13px;color:#94a3b8;margin-top:6px">${c.proveedor ? `<strong style="color:#cbd5e1">${c.proveedor}</strong>` : ''} ${c.actividad ? `· ${c.actividad}` : ''}</div>
+        <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">
+          <div style="font-size:12px;color:#64748b">📅 Período: <span style="color:#94a3b8">${c.periodo_desde || '—'} → ${c.periodo_hasta || '—'}</span></div>
+          <div style="font-size:12px;color:#64748b">⚙️ Fórmula: <span style="color:#94a3b8">${formula.nombre}</span></div>
+          ${c.gestor ? `<div style="font-size:12px;color:#64748b">👤 Gestor: <span style="color:#94a3b8">${c.gestor}</span></div>` : ''}
+          ${c.controlador ? `<div style="font-size:12px;color:#64748b">✔️ Controlador: <span style="color:#94a3b8">${c.controlador}</span></div>` : ''}
+        </div>
       </div>
-      <div style="text-align:right">
-        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Ajuste aplicado</div>
-        <div style="font-size:52px;font-weight:800;color:${varAplicada>=0?'#34d399':'#f87171'}">${varAplicada>=0?'+':''}${varAplicada.toFixed(2)}%</div>
-        <div style="font-size:12px;color:#64748b">${hoy}</div>
+      <div style="text-align:right;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:20px 28px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:6px">Ajuste calculado</div>
+        <div style="font-size:56px;font-weight:900;letter-spacing:-2px;color:${varAplicada>=0?'#34d399':'#f87171'};line-height:1">${varAplicada>=0?'+':''}${varAplicada.toFixed(2)}%</div>
+        <div style="font-size:12px;color:#475569;margin-top:8px">${hoy}</div>
       </div>
     </div>
   </div>
 
+  <!-- KPIs -->
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
-    <div style="background:white;border-radius:12px;padding:20px;border:1px solid #e2e8f0">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:6px">Total base</div>
-      <div style="font-size:22px;font-weight:700">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2})}</div>
+    <div class="section" style="padding:20px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Monto base</div>
+      <div style="font-size:26px;font-weight:800;color:#1e293b">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Precio de referencia</div>
     </div>
-    <div style="background:white;border-radius:12px;padding:20px;border:1px solid #e2e8f0">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:6px">Total actualizado</div>
-      <div style="font-size:22px;font-weight:700;color:#059669">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2})}</div>
+    <div class="section" style="padding:20px;border-color:rgba(5,150,105,.2)">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Monto actualizado</div>
+      <div style="font-size:26px;font-weight:800;color:#059669">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Precio vigente</div>
     </div>
-    <div style="background:white;border-radius:12px;padding:20px;border:1px solid #e2e8f0">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:6px">Diferencia</div>
-      <div style="font-size:22px;font-weight:700;color:${totalDif>=0?'#059669':'#dc2626'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2})}</div>
+    <div class="section" style="padding:20px;border-color:${totalDif>=0?'rgba(5,150,105,.2)':'rgba(220,38,38,.2)'}">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Diferencia</div>
+      <div style="font-size:26px;font-weight:800;color:${totalDif>=0?'#059669':'#dc2626'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Incremento acumulado</div>
     </div>
   </div>
 
-  <div style="background:white;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:20px;overflow:hidden">
-    <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;font-weight:600">Detalle de ítems</div>
+  <!-- FÓRMULA POLINÓMICA -->
+  <div class="section" style="margin-bottom:20px">
+    <div class="section-title">⚙️ Composición de la fórmula polinómica</div>
+    <table>
+      <thead><tr><th>Índice</th><th>Descripción</th><th style="text-align:center">Ponderación</th></tr></thead>
+      <tbody>${filasIndices}</tbody>
+    </table>
+  </div>
+
+  <!-- EVOLUCIÓN MENSUAL -->
+  <div class="section" style="margin-bottom:20px">
+    <div class="section-title">📈 Evolución mensual de índices</div>
     <table>
       <thead><tr>
-        <th>Descripción</th><th style="text-align:right">Precio base</th>
-        <th style="text-align:right">Precio actualizado</th><th style="text-align:right">Diferencia</th>
+        <th>Período</th>
+        <th style="text-align:right">Var. mensual</th>
+        <th style="text-align:right">Var. acumulada</th>
+        <th style="text-align:right">Monto estimado</th>
+      </tr></thead>
+      <tbody>${filasEvolucion}</tbody>
+      <tfoot>
+        <tr style="background:#f0fdf4;font-weight:700">
+          <td style="padding:10px 14px">TOTAL ACUMULADO</td>
+          <td style="padding:10px 14px;text-align:right">—</td>
+          <td style="padding:10px 14px;text-align:right;color:#059669;font-size:15px">${varAplicada>=0?'+':''}${varAplicada.toFixed(2)}%</td>
+          <td style="padding:10px 14px;text-align:right;color:#059669">$ ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- DETALLE DE ÍTEMS -->
+  <div class="section" style="margin-bottom:20px">
+    <div class="section-title">📋 Detalle de ítems contractuales</div>
+    <table>
+      <thead><tr>
+        <th>Descripción</th>
+        <th style="text-align:right">Precio base</th>
+        <th style="text-align:right">Precio actualizado</th>
+        <th style="text-align:right">Diferencia</th>
       </tr></thead>
       <tbody>
         ${filasItems}
-        <tr style="font-weight:700;background:#f8fafc">
-          <td>TOTAL</td>
-          <td style="text-align:right">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-          <td style="text-align:right;color:#059669">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
-          <td style="text-align:right;color:${totalDif>=0?'#059669':'#dc2626'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2})}</td>
+        <tr style="background:#f0fdf4;font-weight:800;font-size:14px">
+          <td style="padding:12px 14px;border-top:2px solid #e2e8f0">TOTAL CONTRATO</td>
+          <td style="padding:12px 14px;text-align:right;border-top:2px solid #e2e8f0">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:12px 14px;text-align:right;color:#059669;border-top:2px solid #e2e8f0">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:12px 14px;text-align:right;color:${totalDif>=0?'#059669':'#dc2626'};border-top:2px solid #e2e8f0">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:24px">
-    Generado por <strong>PoliCalc</strong> · ${hoy} · Datos: INDEC, BNA, YPF
+  <!-- FOOTER -->
+  <div style="text-align:center;padding:20px;color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;margin-top:8px">
+    <strong style="color:#475569">PoliCalc</strong> · Plataforma de Actualización Contractual · ${hoy}<br/>
+    <span style="font-size:10px;color:#cbd5e1">Datos: INDEC · Banco Nación Argentina · YPF · Fuentes oficiales verificadas</span>
   </div>
 
-  <div class="no-print" style="text-align:center;margin-top:20px">
-    <button onclick="window.print()" style="background:#1e293b;color:white;border:none;padding:12px 32px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">🖨️ Guardar como PDF</button>
+  <div class="no-print" style="text-align:center;margin-top:24px;padding-bottom:24px">
+    <button onclick="window.print()" style="background:#0f172a;color:white;border:none;padding:14px 40px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.3px">🖨️ Guardar como PDF</button>
   </div>
+
 </div></body></html>`
 
   const win = window.open('', '_blank')
   win.document.write(html)
   win.document.close()
 }
+
 
 async function exportarExcelContrato() {
   if (!window._contratoCalculo) { toast('Calculá primero', 'warn'); return }
@@ -2895,7 +3052,9 @@ async function editarOrg(orgId) {
 }
 
 async function eliminarOrg(orgId, nombre) {
-  if (!confirm(`¿Eliminar la organización "${nombre}" y TODOS sus datos? Esta acción no se puede deshacer.`)) return
+  if (!confirm(`⚠️ ¿Eliminar "${nombre}"?\n\nEsto borrará TODOS los contratos, fórmulas, usuarios y datos de esta organización.\n\nEsta acción NO se puede deshacer.`)) return
+  const confirmacion = prompt(`Para confirmar escribí exactamente: ${nombre}`)
+  if (confirmacion !== nombre) { toast('Nombre incorrecto — operación cancelada', 'warn'); return }
   
   // Borrar en cascada
   await sb.from('calculos_mensuales').delete().eq('org_id', orgId)
@@ -3087,6 +3246,8 @@ async function renderTimeline() {
 // ════════════════════════════════════════════════════════════════
 
 let crmOrgActual = null
+let formularioSucio = false
+let borradorContrato = null
 
 async function renderCRM() {
   if (currentUser.rol !== 'superadmin') {
@@ -3591,4 +3752,190 @@ async function borrarNota(id, orgId) {
   await sb.from('crm_notas').delete().eq('id', id)
   toast('Nota eliminada', 'success')
   abrirFichaCliente(orgId)
+}
+
+// ════════════════════════════════════════════════════════════════
+// DASHBOARD EJECUTIVO
+// ════════════════════════════════════════════════════════════════
+
+async function renderDashboard() {
+  const hoy = new Date()
+  const mesActual = hoy.toISOString().slice(0, 7)
+  const en30 = new Date(hoy.getTime() + 30*24*60*60*1000)
+
+  // Cargar datos en paralelo
+  const [
+    { data: contratosData },
+    { data: alertasData },
+    { data: historialData },
+    { count: alertasCount }
+  ] = await Promise.all([
+    sb.from('contratos').select('*, formulas(nombre)').eq('org_id', currentOrg.id),
+    sb.from('alertas').select('*').eq('org_id', currentOrg.id).eq('leida', false).order('created_at', { ascending: false }).limit(5),
+    sb.from('calculos_mensuales').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).limit(5),
+    sb.from('alertas').select('*', { count: 'exact', head: true }).eq('org_id', currentOrg.id).eq('leida', false)
+  ])
+
+  // Calcular KPIs
+  let activos = 0, vencidos = 0, porVencer = 0, montoTotal = 0
+  contratosData?.forEach(c => {
+    montoTotal += Number(c.monto_base || 0)
+    const hasta = c.vigencia_hasta ? new Date(c.vigencia_hasta) : null
+    if (!hasta) { activos++; return }
+    if (hasta < hoy) vencidos++
+    else if (hasta <= en30) porVencer++
+    else activos++
+  })
+
+  // Último IPC disponible
+  const ipcPeriodos = Object.keys(indicesValores['IPC'] || {}).sort().reverse()
+  const ultimoIPC = ipcPeriodos[0]
+  const ipcActual = ultimoIPC ? indicesValores['IPC'][ultimoIPC]?.valor : null
+  const ipcAnterior = ipcPeriodos[1] ? indicesValores['IPC'][ipcPeriodos[1]]?.valor : null
+  const ipcVar = ipcActual && ipcAnterior ? ((ipcActual - ipcAnterior) / ipcAnterior * 100) : null
+
+  const usdPeriodos = Object.keys(indicesValores['USD'] || {}).sort().reverse()
+  const ultimoUSD = usdPeriodos[0]
+  const usdActual = ultimoUSD ? indicesValores['USD'][ultimoUSD]?.valor : null
+  const usdAnterior = usdPeriodos[1] ? indicesValores['USD'][usdPeriodos[1]]?.valor : null
+  const usdVar = usdActual && usdAnterior ? ((usdActual - usdAnterior) / usdAnterior * 100) : null
+
+  const PRIORIDAD_COLOR = { alta: '#ef4444', media: '#f59e0b', baja: '#4ade80' }
+
+  let html = `
+    <div style="margin-bottom:28px">
+      <div style="font-size:24px;font-weight:700;letter-spacing:-0.5px;margin-bottom:4px">
+        Buenos días, ${currentUser.nombre || 'Usuario'} 👋
+      </div>
+      <div style="font-size:13px;color:var(--text3)">
+        ${hoy.toLocaleDateString('es-AR', { weekday:'long', day:'numeric', month:'long', year:'numeric' })} · ${currentOrg.nombre}
+      </div>
+    </div>
+
+    <!-- KPIs principales -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="card" style="padding:18px;cursor:pointer" onclick="goPage('contratos')"
+        onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px">Contratos activos</div>
+        <div style="font-size:36px;font-weight:800;color:#4ade80;margin-bottom:4px">${activos}</div>
+        <div style="font-size:12px;color:var(--text3)">de ${contratosData?.length || 0} totales</div>
+      </div>
+      <div class="card" style="padding:18px;cursor:pointer;border-color:${porVencer>0?'rgba(245,158,11,0.3)':'var(--border)'}" onclick="goPage('contratos')"
+        onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${porVencer>0?'rgba(245,158,11,0.3)':'var(--border)'}'">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px">⏰ Por vencer</div>
+        <div style="font-size:36px;font-weight:800;color:${porVencer>0?'#f59e0b':'var(--text3)'};margin-bottom:4px">${porVencer}</div>
+        <div style="font-size:12px;color:var(--text3)">próximos 30 días</div>
+      </div>
+      <div class="card" style="padding:18px;cursor:pointer" onclick="goPage('alertas')"
+        onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px">🔔 Alertas activas</div>
+        <div style="font-size:36px;font-weight:800;color:${alertasCount>0?'var(--accent)':'var(--text3)'};margin-bottom:4px">${alertasCount || 0}</div>
+        <div style="font-size:12px;color:var(--text3)">sin resolver</div>
+      </div>
+      <div class="card" style="padding:18px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px">💰 Monto total</div>
+        <div style="font-size:22px;font-weight:800;color:var(--accent);margin-bottom:4px">$${montoTotal.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+        <div style="font-size:12px;color:var(--text3)">${contratosData?.length || 0} contratos</div>
+      </div>
+    </div>
+
+    <!-- Índices del mes -->
+    <div class="card" style="margin-bottom:16px;padding:16px 20px">
+      <div class="card-title">📈 Índices — ${ultimoIPC || mesActual}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        ${Object.entries(indicesValores).map(([codigo, vals]) => {
+          const periodos = Object.keys(vals).sort().reverse()
+          const ultimo = periodos[0]
+          const anterior = periodos[1]
+          if (!ultimo) return ''
+          const v1 = vals[ultimo]?.valor
+          const v0 = anterior ? vals[anterior]?.valor : null
+          const pct = v1 && v0 ? ((v1 - v0) / v0 * 100) : null
+          const color = pct === null ? '#94a3b8' : pct >= 0 ? '#4ade80' : '#ef4444'
+          const meta = INDICES_META[codigo]
+          return `
+          <div style="flex:1;min-width:110px;padding:12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span class="tag ${meta?.color||'tag-blue'}" style="font-size:10px">${codigo}</span>
+              ${pct !== null ? `<span style="font-size:11px;font-weight:600;color:${color}">${pct>=0?'+':''}${pct.toFixed(2)}%</span>` : ''}
+            </div>
+            <div style="font-size:16px;font-weight:700">${v1?.toLocaleString('es-AR',{maximumFractionDigits:1}) || '—'}</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:2px">${ultimo}</div>
+          </div>`
+        }).filter(Boolean).join('')}
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+      <!-- Contratos recientes -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin:0">📋 Contratos</div>
+          <button class="btn btn-ghost btn-sm" onclick="goPage('contratos')">Ver todos →</button>
+        </div>
+        ${!contratosData?.length ? `<div style="text-align:center;padding:20px;color:var(--text3)">Sin contratos</div>` :
+        contratosData.slice(0,5).map(c => {
+          const hasta = c.vigencia_hasta ? new Date(c.vigencia_hasta) : null
+          const dias = hasta ? Math.ceil((hasta - hoy) / (1000*60*60*24)) : null
+          const color = !dias ? '#94a3b8' : dias < 0 ? '#ef4444' : dias < 30 ? '#f59e0b' : '#4ade80'
+          return `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer"
+            onclick="goPage('contratos')">
+            <div>
+              <div style="font-size:13px;font-weight:500">${c.nombre}</div>
+              <div style="font-size:11px;color:var(--text3)">${c.formulas?.nombre || 'Sin fórmula'}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:13px;font-weight:600;color:var(--accent)">$${Number(c.monto_base||0).toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+              <div style="font-size:10px;color:${color}">${dias === null ? '—' : dias < 0 ? 'Vencido' : dias < 30 ? `${dias}d` : 'Activo'}</div>
+            </div>
+          </div>`
+        }).join('')}
+      </div>
+
+      <!-- Alertas recientes + Actividad -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div class="card-title" style="margin:0">🔔 Alertas recientes</div>
+            <button class="btn btn-ghost btn-sm" onclick="goPage('alertas')">Ver todas →</button>
+          </div>
+          ${!alertasData?.length ? `<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">✅ Sin alertas pendientes</div>` :
+          alertasData.map(a => {
+            const color = PRIORIDAD_COLOR[a.prioridad] || '#94a3b8'
+            return `
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="width:6px;height:6px;border-radius:50%;background:${color};margin-top:5px;flex-shrink:0"></span>
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:500">${a.titulo}</div>
+                <div style="font-size:11px;color:var(--text3)">${new Date(a.created_at).toLocaleDateString('es-AR')}</div>
+              </div>
+            </div>`
+          }).join('')}
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div class="card-title" style="margin:0">💾 Últimos cálculos</div>
+            <button class="btn btn-ghost btn-sm" onclick="goPage('hist')">Ver todos →</button>
+          </div>
+          ${!historialData?.length ? `<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px">Sin cálculos guardados</div>` :
+          historialData.map(h => {
+            const color = h.ajuste_acumulado >= 0 ? '#4ade80' : '#ef4444'
+            return `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-size:12px;font-weight:500">${h.formula_snapshot?.nombre || '—'}</div>
+                <div style="font-size:11px;color:var(--text3)">${new Date(h.created_at).toLocaleDateString('es-AR')}</div>
+              </div>
+              <span style="font-size:13px;font-weight:700;color:${color}">${h.ajuste_acumulado>=0?'+':''}${Number(h.ajuste_acumulado).toFixed(2)}%</span>
+            </div>`
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `
+
+  document.getElementById('page-content').innerHTML = html
 }
