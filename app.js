@@ -258,15 +258,6 @@ function showApp() {
             <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none"/>
           </svg>
           Timeline
-        </div>
-        <div class="nav-item" onclick="goPage('crm')">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="6" cy="5" r="2.5"/>
-            <path d="M1,13 C1,10.5 3.2,8.5 6,8.5 C8.8,8.5 11,10.5 11,13"/>
-            <line x1="13" y1="5" x2="13" y2="9"/>
-            <line x1="11" y1="7" x2="15" y2="7"/>
-          </svg>
-          CRM
         </div>`
     }
   }
@@ -296,9 +287,10 @@ function goPage(page) {
   }
 
   localStorage.setItem('policalc_ultima_pagina', page)
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
   document.querySelectorAll('.nav-item').forEach(el => {
-    if (el.getAttribute('onclick') === `goPage('${page}')`) el.classList.add('active')
+    el.classList.remove('active')
+    const onc = el.getAttribute('onclick') || ''
+    if (onc === `goPage('${page}')`) el.classList.add('active')
   })
   if (page === 'dashboard') renderDashboard()
   else if (page === 'matriz') renderMatriz()
