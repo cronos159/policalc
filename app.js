@@ -2525,31 +2525,40 @@ async function calcularContratoCompleto() {
 
   if (!periodoDesde || !periodoHasta) { toast('Definí el período base y hasta', 'warn'); return }
 
-  // Generar meses
-  const meses = []
+  // Generar todos los meses del contrato
+  const mesesTodos = []
   let [y, m] = periodoDesde.split('-').map(Number)
   const [fy, fm] = periodoHasta.split('-').map(Number)
   while (y < fy || (y === fy && m <= fm)) {
-    meses.push(`${y}-${String(m).padStart(2,'0')}`)
+    mesesTodos.push(`${y}-${String(m).padStart(2,'0')}`)
     m++; if (m > 12) { m = 1; y++ }
   }
 
-  // Calcular variación total acumulada
-  let varAcum = 0
-  let mesBase = meses[0]
+  // Filtrar solo meses que tienen datos en AL MENOS UN índice de la fórmula
+  const meses = mesesTodos.filter(mes => 
+    componentes.some(comp => indicesValores[comp.codigo]?.[mes]?.valor)
+  )
+
+  if (meses.length === 0) {
+    toast('Sin datos de índices para el período seleccionado. Verificá los índices cargados.', 'warn')
+    return
+  }
+
   // Período previo al inicio para calcular variación del primer mes
-  const [y0, m0] = periodoDesde.split('-').map(Number)
+  const [y0, m0] = meses[0].split('-').map(Number)
   const prevM = m0 === 1 ? 12 : m0 - 1
   const prevY = m0 === 1 ? y0 - 1 : y0
   const periodoBase = `${prevY}-${String(prevM).padStart(2,'0')}`
 
   // Calcular mes a mes
+  let varAcum = 0
   const evolucion = []
   for (let i = 0; i < meses.length; i++) {
     const mes = meses[i]
     const mesPrev = i === 0 ? periodoBase : meses[i-1]
     let varMes = 0
     let tieneData = false
+    let compConDatos = 0
 
     componentes.forEach(comp => {
       const v0 = indicesValores[comp.codigo]?.[mesPrev]?.valor
@@ -2557,14 +2566,17 @@ async function calcularContratoCompleto() {
       if (v0 && v1 && v0 !== 0) {
         varMes += ((v1 - v0) / v0) * 100 * (comp.coef / 100)
         tieneData = true
+        compConDatos++
       }
     })
 
     if (tieneData) {
       varAcum = ((1 + varAcum/100) * (1 + varMes/100) - 1) * 100
-      evolucion.push({ mes, varMes, varAcum })
+      evolucion.push({ mes, varMes, varAcum, compConDatos, totalComp: componentes.length })
     }
   }
+
+  const ultimoMesCalculado = evolucion.length > 0 ? evolucion[evolucion.length-1].mes : periodoDesde
 
   // Aplicar gatillo si está activo
   let varAplicada = varAcum
@@ -2707,7 +2719,7 @@ async function calcularContratoCompleto() {
   `
 
   // Guardar resultado para exportar
-  window._contratoCalculo = { contratoEditando, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula, moneda }
+  window._contratoCalculo = { contratoEditando, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula, moneda, ultimoMesCalculado }
 
   resultado.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -2723,7 +2735,7 @@ async function eliminarContratoCompleto(id) {
 
 function exportarInformeContrato() {
   if (!window._contratoCalculo) { toast('Calculá primero', 'warn'); return }
-  const { contratoEditando: c, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula, moneda } = window._contratoCalculo
+  const { contratoEditando: c, itemsActualizados, varAcum, varAplicada, totalBase, totalActualizado, totalDif, evolucion, formula, moneda, ultimoMesCalculado } = window._contratoCalculo
   const hoy = new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'long',year:'numeric'})
   const componentes = parseComponentes(formula.componentes)
 
@@ -2731,8 +2743,8 @@ function exportarInformeContrato() {
     <tr>
       <td style="padding:10px 14px">${i.descripcion}</td>
       <td style="padding:10px 14px;text-align:right">${moneda} ${i.monto_base.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-      <td style="padding:10px 14px;text-align:right;color:#059669;font-weight:600">${moneda} ${i.montoActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-      <td style="padding:10px 14px;text-align:right;font-weight:600;color:${i.diferencia>=0?'#059669':'#dc2626'}">${i.diferencia>=0?'+':''}${moneda} ${i.diferencia.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:10px 14px;text-align:right;color:#059669;font-weight:600">${moneda} ${i.montoActualizadoReal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="padding:10px 14px;text-align:right;font-weight:600;color:${i.diferenciaReal>=0?'#059669':'#dc2626'}">${i.diferenciaReal>=0?'+':''}${moneda} ${i.diferenciaReal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
     </tr>`).join('')
 
   const filasEvolucion = evolucion.map((e, idx) => {
@@ -2789,7 +2801,8 @@ function exportarInformeContrato() {
         ${c.nro_contrato ? `<div style="display:inline-block;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 10px;font-size:12px;color:#cbd5e1;margin-bottom:8px">Contrato N° ${c.nro_contrato}</div>` : ''}
         <div style="font-size:13px;color:#94a3b8;margin-top:6px">${c.proveedor ? `<strong style="color:#cbd5e1">${c.proveedor}</strong>` : ''} ${c.actividad ? `· ${c.actividad}` : ''}</div>
         <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">
-          <div style="font-size:12px;color:#64748b">📅 Período: <span style="color:#94a3b8">${c.periodo_desde || '—'} → ${c.periodo_hasta || '—'}</span></div>
+          <div style="font-size:12px;color:#64748b">📅 Período calculado: <span style="color:#94a3b8">${c.periodo_desde || '—'} → ${ultimoMesCalculado || c.periodo_hasta || '—'}</span></div>
+        <div style="font-size:12px;color:#64748b">📋 Contrato hasta: <span style="color:#94a3b8">${c.periodo_hasta || '—'}</span></div>
           <div style="font-size:12px;color:#64748b">⚙️ Fórmula: <span style="color:#94a3b8">${formula.nombre}</span></div>
           ${c.gestor ? `<div style="font-size:12px;color:#64748b">👤 Gestor: <span style="color:#94a3b8">${c.gestor}</span></div>` : ''}
           ${c.controlador ? `<div style="font-size:12px;color:#64748b">✔️ Controlador: <span style="color:#94a3b8">${c.controlador}</span></div>` : ''}
@@ -2797,13 +2810,13 @@ function exportarInformeContrato() {
       </div>
       <div style="text-align:right;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:20px 28px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:6px">Ajuste calculado</div>
-        <div style="font-size:56px;font-weight:900;letter-spacing:-2px;color:${varAplicada>=0?'#34d399':'#f87171'};line-height:1">${varAplicada>=0?'+':''}${varAplicada.toFixed(2)}%</div>
+        <div style="font-size:56px;font-weight:900;letter-spacing:-2px;color:${varAcum>=0?'#34d399':'#f87171'};line-height:1">${varAcum>=0?'+':''}${varAcum.toFixed(2)}%</div>
         <div style="font-size:12px;color:#475569;margin-top:8px">${hoy}</div>
       </div>
     </div>
   </div>
 
-  <!-- KPIs -->
+  <!-- KPIs reales calculados -->
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">
     <div class="section" style="padding:20px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Monto base</div>
@@ -2812,13 +2825,13 @@ function exportarInformeContrato() {
     </div>
     <div class="section" style="padding:20px;border-color:rgba(5,150,105,.2)">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Monto actualizado</div>
-      <div style="font-size:26px;font-weight:800;color:#059669">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Precio vigente</div>
+      <div style="font-size:26px;font-weight:800;color:#059669">${moneda} ${(totalBase*(1+varAcum/100)).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:11px;color:#059669;margin-top:4px">Variación: ${varAcum>=0?'+':''}${varAcum.toFixed(2)}%</div>
     </div>
-    <div class="section" style="padding:20px;border-color:${totalDif>=0?'rgba(5,150,105,.2)':'rgba(220,38,38,.2)'}">
+    <div class="section" style="padding:20px;border-color:${varAcum>=0?'rgba(5,150,105,.2)':'rgba(220,38,38,.2)'}">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px">Diferencia</div>
-      <div style="font-size:26px;font-weight:800;color:${totalDif>=0?'#059669':'#dc2626'}">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Incremento acumulado</div>
+      <div style="font-size:26px;font-weight:800;color:${varAcum>=0?'#059669':'#dc2626'}">${varAcum>=0?'+':''}${moneda} ${(totalBase*(1+varAcum/100)-totalBase).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Hasta ${ultimoMesCalculado||'—'}</div>
     </div>
   </div>
 
@@ -2846,8 +2859,8 @@ function exportarInformeContrato() {
         <tr style="background:#f0fdf4;font-weight:700">
           <td style="padding:10px 14px">TOTAL ACUMULADO</td>
           <td style="padding:10px 14px;text-align:right">—</td>
-          <td style="padding:10px 14px;text-align:right;color:#059669;font-size:15px">${varAplicada>=0?'+':''}${varAplicada.toFixed(2)}%</td>
-          <td style="padding:10px 14px;text-align:right;color:#059669">$ ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
+          <td style="padding:10px 14px;text-align:right;color:#059669;font-size:15px">${varAcum>=0?'+':''}${varAcum.toFixed(2)}%</td>
+          <td style="padding:10px 14px;text-align:right;color:#059669">$ ${(totalBase*(1+varAcum/100)).toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
         </tr>
       </tfoot>
     </table>
@@ -2868,8 +2881,8 @@ function exportarInformeContrato() {
         <tr style="background:#f0fdf4;font-weight:800;font-size:14px">
           <td style="padding:12px 14px;border-top:2px solid #e2e8f0">TOTAL CONTRATO</td>
           <td style="padding:12px 14px;text-align:right;border-top:2px solid #e2e8f0">${moneda} ${totalBase.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="padding:12px 14px;text-align:right;color:#059669;border-top:2px solid #e2e8f0">${moneda} ${totalActualizado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="padding:12px 14px;text-align:right;color:${totalDif>=0?'#059669':'#dc2626'};border-top:2px solid #e2e8f0">${totalDif>=0?'+':''}${moneda} ${totalDif.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:12px 14px;text-align:right;color:#059669;border-top:2px solid #e2e8f0">${moneda} ${(totalBase*(1+varAcum/100)).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:12px 14px;text-align:right;color:#059669;border-top:2px solid #e2e8f0">+${moneda} ${(totalBase*(1+varAcum/100)-totalBase).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
         </tr>
       </tbody>
     </table>
