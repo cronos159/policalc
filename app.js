@@ -297,8 +297,9 @@ function goPage(page) {
 
   localStorage.setItem('policalc_ultima_pagina', page)
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
-  const idx = { 'dashboard': 0, 'matriz': 1, 'contratos': 2, 'hist': 3, 'form': 4, 'indices': 5, 'alertas': 6, 'admin': 7, 'timeline': 8, 'crm': 9 }[page]
-  document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (el.getAttribute('onclick') === `goPage('${page}')`) el.classList.add('active')
+  })
   if (page === 'dashboard') renderDashboard()
   else if (page === 'matriz') renderMatriz()
   else if (page === 'contratos') renderContratos()
@@ -308,7 +309,7 @@ function goPage(page) {
   else if (page === 'alertas') renderAlertas()
   else if (page === 'admin') renderAdmin()
   else if (page === 'timeline') renderTimeline()
-  else if (page === 'crm') renderCRM()
+  else if (page === 'crm') renderCRMUsuario()
 }
 
 // ════ HELPER CENTRAL — parsea componentes sin importar el formato ════
@@ -3408,10 +3409,6 @@ let formularioSucio = false
 let borradorContrato = null
 
 async function renderCRM() {
-  if (currentUser.rol !== 'superadmin') {
-    document.getElementById('page-content').innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">Acceso restringido</div>`
-    return
-  }
 
   const { data: orgs } = await sb.from('organizaciones').select('*').order('nombre')
   const { data: interacciones } = await sb.from('crm_interacciones').select('*').order('fecha', { ascending: false }).limit(5)
