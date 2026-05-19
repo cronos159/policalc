@@ -271,7 +271,10 @@ function showApp() {
     }
   }
 
-  goPage('dashboard')
+  // Restaurar última página visitada
+  const ultimaPagina = localStorage.getItem('policalc_ultima_pagina') || 'dashboard'
+  const paginasValidas = ['dashboard','matriz','contratos','hist','form','indices','alertas','admin','timeline','crm']
+  goPage(paginasValidas.includes(ultimaPagina) ? ultimaPagina : 'dashboard')
 }
 
 function updateClock() {
@@ -289,6 +292,7 @@ function goPage(page) {
     localStorage.removeItem('policalc_borrador_contrato')
   }
 
+  localStorage.setItem('policalc_ultima_pagina', page)
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
   const idx = { 'dashboard': 0, 'matriz': 1, 'contratos': 2, 'hist': 3, 'form': 4, 'indices': 5, 'alertas': 6, 'admin': 7, 'timeline': 8, 'crm': 9 }[page]
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active')
