@@ -4086,3 +4086,6 @@ async function renderDashboard() {
 
   document.getElementById('page-content').innerHTML = html
 }
+
+// PoliCalc v2.1 — Build 20260519
+console.log('PoliCalc v2.1 cargado correctamente ✓')
