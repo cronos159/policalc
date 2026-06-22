@@ -3452,6 +3452,12 @@ async function renderCRM() {
       <button class="btn btn-accent" onclick="goPage('admin')">← Admin</button>
     </div>
 
+    <div style="display:flex;gap:4px;background:#111;border:1px solid #1e1e1e;border-radius:10px;padding:4px;margin-bottom:24px;width:fit-content">
+      <div onclick="renderCRM()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;background:var(--accent);color:#000;letter-spacing:.3px">Clientes</div>
+      <div onclick="renderLicitaciones()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);background:transparent;letter-spacing:.3px">Licitaciones</div>
+      <div onclick="renderCotizaciones()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);background:transparent;letter-spacing:.3px">Cotizaciones</div>
+    </div>
+
     <!-- KPIs -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
       <div class="card" style="padding:16px;text-align:center">
@@ -3784,7 +3790,15 @@ function nuevaInteraccion(orgId) {
         </div>
       </div>
       <div class="input-group"><label>Resumen de la interacción *</label>
-        <textarea id="ni-resumen" rows="3" placeholder="¿De qué se habló? ¿Qué se acordó?" style="width:100%;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-family:inherit;font-size:13px"></textarea>
+        <div style="display:flex;gap:6px;align-items:flex-start">
+          <textarea id="ni-resumen" rows="3" placeholder="De que se habló? Que se acordó?"
+            style="flex:1;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-family:inherit;font-size:13px"></textarea>
+          <button type="button" onclick="activarVoz('ni-resumen')"
+            style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);flex-shrink:0;margin-top:2px"
+            title="Dictado por voz">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+          </button>
+        </div>
       </div>
       <div class="input-group"><label>Próximo seguimiento</label><input type="date" id="ni-seg"/></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -3901,8 +3915,15 @@ function nuevaNota(orgId) {
   modal.innerHTML = `
     <div style="background:var(--surface);border-radius:14px;padding:28px;width:440px;border:1px solid var(--border)">
       <h3 style="margin-bottom:16px;font-size:16px;font-weight:600">Nueva nota interna</h3>
-      <textarea id="nn-contenido" rows="4" placeholder="Escribí tu nota aquí..."
-        style="width:100%;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px;color:var(--text);font-family:inherit;font-size:13px;margin-bottom:14px"></textarea>
+      <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:14px">
+        <textarea id="nn-contenido" rows="4" placeholder="Escribí tu nota aquí..."
+          style="flex:1;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px;color:var(--text);font-family:inherit;font-size:13px"></textarea>
+        <button type="button" onclick="activarVoz('nn-contenido')"
+          style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);flex-shrink:0;margin-top:2px"
+          title="Dictado por voz">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        </button>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
         <button class="btn btn-accent" onclick="guardarNota('${orgId}')">Guardar nota</button>
@@ -4150,3 +4171,417 @@ function toggleTodosItems(masterChk) {
 
 // PoliCalc v2.1 — Build 20260519
 console.log('PoliCalc v2.1 cargado correctamente ✓')
+
+// ════════════════════════════════════════════════════════════════
+// CRM — Licitaciones
+// ════════════════════════════════════════════════════════════════
+
+async function renderLicitaciones() {
+  const { data: lics } = await sb.from('licitaciones').select('*').order('fecha', { ascending: false })
+
+  const ESTADO_COLOR = {
+    en_evaluacion: '#6366f1',
+    presentada: '#f59e0b',
+    a_la_espera: '#f59e0b',
+    ganada: '#4ade80',
+    perdida: '#ef4444'
+  }
+
+  const tabsHtml = `
+    <div style="display:flex;gap:4px;background:#111;border:1px solid #1e1e1e;border-radius:10px;padding:4px;margin-bottom:24px;width:fit-content">
+      <div onclick="renderCRM()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);background:transparent;letter-spacing:.3px">Clientes</div>
+      <div onclick="renderLicitaciones()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;background:var(--accent);color:#000;letter-spacing:.3px">Licitaciones</div>
+      <div onclick="renderCotizaciones()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);background:transparent;letter-spacing:.3px">Cotizaciones</div>
+    </div>`
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">CRM — Licitaciones</div>
+        <div class="page-sub">Control de licitaciones por empresa y plataforma</div>
+      </div>
+      <button class="btn btn-accent" onclick="nuevaLicitacion()">+ Nueva licitacion</button>
+    </div>
+    ${tabsHtml}
+    <div class="card">
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface2)">
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Fecha</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Plataforma</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Empresa</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Invita</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Servicio</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Cierre</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Estado</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Participamos</th>
+            </tr>
+          </thead>
+          <tbody>`
+
+  if (!lics || lics.length === 0) {
+    html += `<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--text3);font-size:13px">Sin licitaciones registradas</td></tr>`
+  } else {
+    lics.forEach(l => {
+      const color = ESTADO_COLOR[l.estado] || '#94a3b8'
+      const fecha = l.fecha ? new Date(l.fecha).toLocaleDateString('es-AR') : '—'
+      const cierre = l.fecha_cierre ? new Date(l.fecha_cierre).toLocaleDateString('es-AR') : '—'
+      const hoy = new Date()
+      const diasCierre = l.fecha_cierre ? Math.ceil((new Date(l.fecha_cierre) - hoy) / (1000*60*60*24)) : null
+      const cierreColor = diasCierre !== null ? (diasCierre < 0 ? '#ef4444' : diasCierre < 5 ? '#f59e0b' : 'var(--text2)') : 'var(--text3)'
+      const participa = l.se_participa === 'SI' ? '#4ade80' : l.se_participa === 'NO' ? '#ef4444' : 'var(--text3)'
+
+      html += `
+        <tr onclick="verLicitacion('${l.id}')"
+          style="cursor:pointer;transition:background .15s"
+          onmouseover="this.style.background='var(--surface2)'"
+          onmouseout="this.style.background='transparent'">
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${fecha}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${l.plataforma || '—'}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${l.empresa_kompass || '—'}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${l.invita || '—'}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text);border-bottom:1px solid var(--border);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.servicio}</td>
+          <td style="padding:12px 14px;font-size:12px;color:${cierreColor};font-weight:500;border-bottom:1px solid var(--border)">${cierre}</td>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border)">
+            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:10px;font-weight:600;letter-spacing:.3px;background:${color}15;color:${color};border:1px solid ${color}30">
+              <span style="width:5px;height:5px;border-radius:50%;background:${color};flex-shrink:0"></span>
+              ${l.estado?.replace(/_/g,' ') || '—'}
+            </span>
+          </td>
+          <td style="padding:12px 14px;font-size:12px;font-weight:700;color:${participa};border-bottom:1px solid var(--border)">${l.se_participa || '—'}</td>
+        </tr>`
+    })
+  }
+
+  html += `</tbody></table></div></div>`
+  document.getElementById('page-content').innerHTML = html
+}
+
+function nuevaLicitacion() {
+  const hoy = new Date().toISOString().slice(0,10)
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:600px;border:1px solid var(--border);max-height:88vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+        <h3 style="font-size:15px;font-weight:600;color:var(--text)">Nueva licitacion</h3>
+        <button onclick="document.getElementById('modal-overlay').remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Fecha</label><input type="date" id="nl-fecha" value="${hoy}"/></div>
+        <div class="input-group"><label>Plataforma</label>
+          <select id="nl-plataforma">
+            <option value="">Seleccionar...</option>
+            <option>Coupa</option><option>Exiros</option><option>SmartGEP</option><option>Ariba</option><option>x mail</option><option>Otro</option>
+          </select>
+        </div>
+        <div class="input-group"><label>Empresa Kompass</label>
+          <select id="nl-empresa">
+            <option value="">Seleccionar...</option>
+            <option>Kompass S.R.L.</option><option>WTS Del Sur S.R.L.</option><option>AGS S.R.L.</option><option>Indio S.R.L.</option><option>Venser S.R.L.</option>
+          </select>
+        </div>
+        <div class="input-group"><label>Invita / Cliente</label><input type="text" id="nl-invita" placeholder="YPF, Tecpetrol, Vista..."/></div>
+      </div>
+      <div class="input-group">
+        <label>Servicio *</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" id="nl-servicio" placeholder="Descripcion del servicio licitado..." style="flex:1"/>
+          <button type="button" onclick="activarVoz('nl-servicio')"
+            style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);flex-shrink:0"
+            title="Dictado por voz">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Fecha apertura</label><input type="date" id="nl-apertura"/></div>
+        <div class="input-group"><label>Fecha cierre</label><input type="date" id="nl-cierre"/></div>
+        <div class="input-group"><label>Participamos</label>
+          <select id="nl-participa">
+            <option value="pendiente">Pendiente</option><option value="SI">SI</option><option value="NO">NO</option>
+          </select>
+        </div>
+        <div class="input-group"><label>Estado</label>
+          <select id="nl-estado">
+            <option value="en_evaluacion">En evaluacion</option><option value="presentada">Presentada</option>
+            <option value="a_la_espera">A la espera</option><option value="ganada">Ganada</option><option value="perdida">Perdida</option>
+          </select>
+        </div>
+        <div class="input-group" style="grid-column:1/-1"><label>Responsable</label><input type="text" id="nl-responsable" placeholder="Nombre del responsable"/></div>
+      </div>
+      <div class="input-group">
+        <label>Observaciones</label>
+        <div style="display:flex;gap:6px;align-items:flex-start">
+          <textarea id="nl-obs" rows="3" placeholder="Notas, contexto, que falta..."
+            style="flex:1;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-family:inherit;font-size:13px"></textarea>
+          <button type="button" onclick="activarVoz('nl-obs')"
+            style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);flex-shrink:0;margin-top:2px"
+            title="Dictado por voz">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+          </button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="guardarLicitacion()">Guardar licitacion</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function guardarLicitacion() {
+  const servicio = document.getElementById('nl-servicio').value.trim()
+  if (!servicio) { toast('El campo Servicio es obligatorio', 'warn'); return }
+  const { error } = await sb.from('licitaciones').insert({
+    fecha: document.getElementById('nl-fecha').value,
+    plataforma: document.getElementById('nl-plataforma').value,
+    empresa_kompass: document.getElementById('nl-empresa').value,
+    invita: document.getElementById('nl-invita').value.trim(),
+    servicio,
+    fecha_apertura: document.getElementById('nl-apertura').value || null,
+    fecha_cierre: document.getElementById('nl-cierre').value || null,
+    se_participa: document.getElementById('nl-participa').value,
+    estado: document.getElementById('nl-estado').value,
+    responsable: document.getElementById('nl-responsable').value.trim(),
+    observaciones: document.getElementById('nl-obs').value.trim()
+  })
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  document.getElementById('modal-overlay').remove()
+  toast('Licitacion guardada', 'success')
+  renderLicitaciones()
+}
+
+async function verLicitacion(id) {
+  const { data: l } = await sb.from('licitaciones').select('*').eq('id', id).single()
+  if (!l) return
+  const ESTADO_COLOR = { en_evaluacion:'#6366f1', presentada:'#f59e0b', a_la_espera:'#f59e0b', ganada:'#4ade80', perdida:'#ef4444' }
+  const color = ESTADO_COLOR[l.estado] || '#94a3b8'
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:center;justify-content:center'
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:520px;border:1px solid var(--border);max-height:85vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+        <div>
+          <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px">${l.servicio}</div>
+          <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:10px;font-weight:600;background:${color}15;color:${color};border:1px solid ${color}30">
+            <span style="width:5px;height:5px;border-radius:50%;background:${color}"></span>
+            ${l.estado?.replace(/_/g,' ')}
+          </span>
+        </div>
+        <button onclick="document.getElementById('modal-overlay').remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">×</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Plataforma</div><div style="color:var(--text2)">${l.plataforma || '—'}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Empresa</div><div style="color:var(--text2)">${l.empresa_kompass || '—'}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Invita</div><div style="color:var(--text2)">${l.invita || '—'}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Responsable</div><div style="color:var(--text2)">${l.responsable || '—'}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Apertura</div><div style="color:var(--text2)">${l.fecha_apertura ? new Date(l.fecha_apertura).toLocaleDateString('es-AR') : '—'}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Cierre</div><div style="color:var(--text2)">${l.fecha_cierre ? new Date(l.fecha_cierre).toLocaleDateString('es-AR') : '—'}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Participamos</div><div style="font-weight:700;color:${l.se_participa==='SI'?'#4ade80':l.se_participa==='NO'?'#ef4444':'var(--text3)'}">${l.se_participa || '—'}</div></div>
+      </div>
+      ${l.observaciones ? `<div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Observaciones</div><div style="font-size:13px;color:var(--text2);line-height:1.6">${l.observaciones}</div></div>` : ''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cerrar</button>
+        <button class="btn btn-ghost" style="color:#ef4444;border-color:#ef444430" onclick="borrarLicitacion('${l.id}')">Eliminar</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function borrarLicitacion(id) {
+  if (!confirm('Eliminar esta licitacion?')) return
+  await sb.from('licitaciones').delete().eq('id', id)
+  document.getElementById('modal-overlay').remove()
+  toast('Licitacion eliminada', 'success')
+  renderLicitaciones()
+}
+
+// ════════════════════════════════════════════════════════════════
+// CRM — Cotizaciones
+// ════════════════════════════════════════════════════════════════
+
+async function renderCotizaciones() {
+  const { data: cotz } = await sb.from('cotizaciones').select('*').order('fecha', { ascending: false })
+  const { data: orgs } = await sb.from('organizaciones').select('id, nombre').order('nombre')
+
+  const ESTADO_COLOR = {
+    pendiente: '#6366f1', enviada: '#f59e0b', en_seguimiento: '#f59e0b',
+    aprobada: '#4ade80', rechazada: '#ef4444', finalizada: '#94a3b8'
+  }
+
+  const tabsHtml = `
+    <div style="display:flex;gap:4px;background:#111;border:1px solid #1e1e1e;border-radius:10px;padding:4px;margin-bottom:24px;width:fit-content">
+      <div onclick="renderCRM()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);background:transparent;letter-spacing:.3px">Clientes</div>
+      <div onclick="renderLicitaciones()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);background:transparent;letter-spacing:.3px">Licitaciones</div>
+      <div onclick="renderCotizaciones()" style="padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;background:var(--accent);color:#000;letter-spacing:.3px">Cotizaciones</div>
+    </div>`
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">CRM — Cotizaciones</div>
+        <div class="page-sub">Seguimiento de presupuestos y propuestas comerciales</div>
+      </div>
+      <button class="btn btn-accent" onclick="nuevaCotizacion()">+ Nueva cotizacion</button>
+    </div>
+    ${tabsHtml}
+    <div class="card">
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface2)">
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Fecha</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">N Presupuesto</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Cliente</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Monto</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Moneda</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Empresa</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Estado</th>
+              <th style="padding:10px 14px;font-size:10px;font-weight:600;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border)">Responsable</th>
+            </tr>
+          </thead>
+          <tbody>`
+
+  if (!cotz || cotz.length === 0) {
+    html += `<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--text3);font-size:13px">Sin cotizaciones registradas</td></tr>`
+  } else {
+    cotz.forEach(c => {
+      const color = ESTADO_COLOR[c.estado] || '#94a3b8'
+      const fecha = c.fecha ? new Date(c.fecha).toLocaleDateString('es-AR') : '—'
+      const monto = c.monto ? Number(c.monto).toLocaleString('es-AR', { maximumFractionDigits: 0 }) : '—'
+      const org = orgs?.find(o => o.id === c.org_id)
+      html += `
+        <tr style="cursor:pointer;transition:background .15s"
+          onmouseover="this.style.background='var(--surface2)'"
+          onmouseout="this.style.background='transparent'">
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${fecha}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text);font-weight:500;border-bottom:1px solid var(--border)">${c.numero_presupuesto || '—'}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${org?.nombre || '—'}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--accent);font-weight:600;border-bottom:1px solid var(--border)">${monto}</td>
+          <td style="padding:12px 14px;font-size:11px;color:var(--text3);font-weight:600;border-bottom:1px solid var(--border)">${c.moneda || 'ARS'}</td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${c.empresa_kompass || '—'}</td>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border)">
+            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:10px;font-weight:600;letter-spacing:.3px;background:${color}15;color:${color};border:1px solid ${color}30">
+              <span style="width:5px;height:5px;border-radius:50%;background:${color};flex-shrink:0"></span>
+              ${c.estado || '—'}
+            </span>
+          </td>
+          <td style="padding:12px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">${c.responsable || '—'}</td>
+        </tr>`
+    })
+  }
+
+  html += `</tbody></table></div></div>`
+  document.getElementById('page-content').innerHTML = html
+}
+
+async function nuevaCotizacion() {
+  const { data: orgs } = await sb.from('organizaciones').select('id, nombre').order('nombre')
+  const hoy = new Date().toISOString().slice(0,10)
+  const modal = document.createElement('div')
+  modal.id = 'modal-overlay'
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:center;justify-content:center'
+  const optsOrgs = orgs?.map(o => `<option value="${o.id}">${o.nombre}</option>`).join('') || ''
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:14px;padding:28px;width:560px;border:1px solid var(--border);max-height:88vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+        <h3 style="font-size:15px;font-weight:600;color:var(--text)">Nueva cotizacion</h3>
+        <button onclick="document.getElementById('modal-overlay').remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">×</button>
+      </div>
+      <div class="grid-2">
+        <div class="input-group"><label>Fecha</label><input type="date" id="nc-fecha" value="${hoy}"/></div>
+        <div class="input-group"><label>N Presupuesto</label><input type="text" id="nc-nro" placeholder="PRES-2026-001"/></div>
+        <div class="input-group" style="grid-column:1/-1"><label>Cliente</label>
+          <select id="nc-org"><option value="">Seleccionar cliente...</option>${optsOrgs}</select>
+        </div>
+        <div class="input-group"><label>Monto</label><input type="number" id="nc-monto" placeholder="0"/></div>
+        <div class="input-group"><label>Moneda</label>
+          <select id="nc-moneda"><option value="ARS">ARS</option><option value="USD">USD</option></select>
+        </div>
+        <div class="input-group"><label>Empresa Kompass</label>
+          <select id="nc-empresa">
+            <option value="">Seleccionar...</option>
+            <option>Kompass S.R.L.</option><option>WTS Del Sur S.R.L.</option><option>AGS S.R.L.</option><option>Indio S.R.L.</option><option>Venser S.R.L.</option>
+          </select>
+        </div>
+        <div class="input-group"><label>Estado</label>
+          <select id="nc-estado">
+            <option value="pendiente">Pendiente</option><option value="enviada">Enviada</option>
+            <option value="en_seguimiento">En seguimiento</option><option value="aprobada">Aprobada</option>
+            <option value="rechazada">Rechazada</option><option value="finalizada">Finalizada</option>
+          </select>
+        </div>
+        <div class="input-group" style="grid-column:1/-1"><label>Responsable</label><input type="text" id="nc-responsable" placeholder="Nombre del responsable"/></div>
+      </div>
+      <div class="input-group">
+        <label>Observaciones</label>
+        <div style="display:flex;gap:6px;align-items:flex-start">
+          <textarea id="nc-obs" rows="3" placeholder="Notas adicionales..."
+            style="flex:1;resize:vertical;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-family:inherit;font-size:13px"></textarea>
+          <button type="button" onclick="activarVoz('nc-obs')"
+            style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent);flex-shrink:0;margin-top:2px"
+            title="Dictado por voz">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+          </button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-ghost" onclick="document.getElementById('modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-accent" onclick="guardarCotizacion()">Guardar cotizacion</button>
+      </div>
+    </div>`
+  document.getElementById('modal-overlay')?.remove()
+  document.body.appendChild(modal)
+}
+
+async function guardarCotizacion() {
+  const { error } = await sb.from('cotizaciones').insert({
+    fecha: document.getElementById('nc-fecha').value,
+    numero_presupuesto: document.getElementById('nc-nro').value.trim(),
+    org_id: document.getElementById('nc-org').value || null,
+    monto: parseFloat(document.getElementById('nc-monto').value) || null,
+    moneda: document.getElementById('nc-moneda').value,
+    empresa_kompass: document.getElementById('nc-empresa').value,
+    estado: document.getElementById('nc-estado').value,
+    responsable: document.getElementById('nc-responsable').value.trim(),
+    observaciones: document.getElementById('nc-obs').value.trim()
+  })
+  if (error) { toast('Error: ' + error.message, 'error'); return }
+  document.getElementById('modal-overlay').remove()
+  toast('Cotizacion guardada', 'success')
+  renderCotizaciones()
+}
+
+// ════════════════════════════════════════════════════════════════
+// Dictado por voz (Web Speech API)
+// ════════════════════════════════════════════════════════════════
+
+function activarVoz(targetId) {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Tu navegador no soporta voz. Usa Chrome.', 'warn')
+    return
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  const rec = new SpeechRecognition()
+  rec.lang = 'es-AR'
+  rec.interimResults = false
+  rec.maxAlternatives = 1
+  rec.start()
+  toast('Escuchando...', 'info')
+  rec.onresult = (e) => {
+    const texto = e.results[0][0].transcript
+    const el = document.getElementById(targetId)
+    if (el) {
+      el.value = (el.value ? el.value + ' ' : '') + texto
+      el.dispatchEvent(new Event('input'))
+    }
+    toast('Texto capturado', 'success')
+  }
+  rec.onerror = () => toast('Error al escuchar. Intenta de nuevo.', 'error')
+}
